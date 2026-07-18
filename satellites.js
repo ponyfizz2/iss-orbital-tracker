@@ -29,6 +29,7 @@ const CONSTELLATIONS = {
         maxCount: 200,
         enabled: false,
         group: 'starlink',
+        tleSearch: 'STARLINK',
         fallbackOrbit: { inclination: 53, altKm: 550, count: 200, planes: 20, satsPerPlane: 10 },
     },
     iridium: {
@@ -38,6 +39,7 @@ const CONSTELLATIONS = {
         maxCount: 80,
         enabled: false,
         group: 'iridium-NEXT',
+        tleSearch: 'IRIDIUM',
         fallbackOrbit: { inclination: 86.4, altKm: 780, count: 66, planes: 6, satsPerPlane: 11 },
     },
     gps: {
@@ -47,6 +49,7 @@ const CONSTELLATIONS = {
         maxCount: 35,
         enabled: false,
         group: 'gps-ops',
+        tleSearch: 'GPS',
         fallbackOrbit: { inclination: 55, altKm: 20200, count: 31, planes: 6, satsPerPlane: 5 },
     },
     lro: {
@@ -96,12 +99,41 @@ const DEFAULT_SAT_MARKER_SCALE = 1.75;
 const MIN_SAT_MARKER_SCALE = 1;
 const MAX_SAT_MARKER_SCALE = 3;
 let satMarkerScale = DEFAULT_SAT_MARKER_SCALE;
-
-// CORS proxy URLs
-const CORS_PROXIES = [
-    'https://corsproxy.io/?',
-    'https://api.allorigins.win/raw?url=',
+const TLE_API_BASE = 'https://tle.ivanstanojevic.me/api/tle';
+const AIRCRAFT_PROVIDERS = [
+    { name: 'Airplanes.live', base: 'https://api.airplanes.live/v2' },
+    { name: 'ADS-B One', base: 'https://api.adsb.one/v2' },
 ];
+const AIRCRAFT_REFRESH_MS = 15000;
+const AIRCRAFT_VIEW_SHIFT_DEG = 8;
+const AIRCRAFT_REQUEST_GAP_MS = 1100;
+let aircraftRequestQueue = Promise.resolve();
+let lastAircraftRequestAt = 0;
+
+function requestAircraftUrl(url) {
+    const request = aircraftRequestQueue.then(async () => {
+        const waitMs = Math.max(0, AIRCRAFT_REQUEST_GAP_MS - (Date.now() - lastAircraftRequestAt));
+        if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+        lastAircraftRequestAt = Date.now();
+        return fetchWithTimeout(url, { cache: 'no-store' }, 8000);
+    });
+    aircraftRequestQueue = request.catch(() => { });
+    return request;
+}
+
+function setFeedState(key, label, tone = 'idle') {
+    const checkbox = document.querySelector(`input[data-sat="${key}"]`);
+    const row = checkbox?.closest('.sat-toggle');
+    if (!row) return;
+    let state = row.querySelector('.feed-state');
+    if (!state) {
+        state = document.createElement('span');
+        state.className = 'feed-state';
+        row.appendChild(state);
+    }
+    state.className = `feed-state ${tone}`;
+    state.textContent = label;
+}
 
 /* ====== CELESTRAK URL ====== */
 function getCelestrakUrl(key) {
@@ -109,6 +141,33 @@ function getCelestrakUrl(key) {
     if (config.group) return `https://celestrak.org/NORAD/elements/gp.php?GROUP=${config.group}&FORMAT=TLE`;
     if (config.noradId) return `https://celestrak.org/NORAD/elements/gp.php?CATNR=${config.noradId}&FORMAT=TLE`;
     return null;
+}
+
+async function fetchTleApiItems(key) {
+    const config = CONSTELLATIONS[key];
+    if (config.noradId) {
+        const response = await fetchWithTimeout(`${TLE_API_BASE}/${config.noradId}`, { cache: 'no-store' }, 6500);
+        if (!response.ok) throw new Error(`TLE API returned ${response.status}`);
+        const item = await response.json();
+        if (!item?.line1 || !item?.line2) throw new Error('TLE API returned no orbital elements');
+        return [{ name: item.name || config.name, line1: item.line1, line2: item.line2 }];
+    }
+
+    const search = config.tleSearch || config.name;
+    const pageSize = Math.min(100, config.maxCount);
+    const pageCount = Math.ceil(config.maxCount / pageSize);
+    const items = [];
+    for (let page = 1; page <= pageCount; page++) {
+        const url = `${TLE_API_BASE}/?search=${encodeURIComponent(search)}&page-size=${pageSize}&page=${page}`;
+        const response = await fetchWithTimeout(url, { cache: 'no-store' }, 6500);
+        if (!response.ok) throw new Error(`TLE API returned ${response.status}`);
+        const payload = await response.json();
+        const members = Array.isArray(payload?.member) ? payload.member : [];
+        items.push(...members.map(item => ({ name: item.name, line1: item.line1, line2: item.line2 })));
+        if (members.length < pageSize) break;
+    }
+    if (!items.length) throw new Error('TLE API returned no matching satellites');
+    return items.slice(0, config.maxCount);
 }
 
 /* ====== TLE FETCHING ====== */
@@ -125,13 +184,15 @@ async function fetchConstellationTLEs(key) {
     }
 
     if (key === 'military') {
-        fetchMilitaryAircraft();
+        fetchAircraft('military');
         return;
     }
     if (key === 'civilian') {
-        fetchCivilianAircraft();
+        fetchAircraft('civilian');
         return;
     }
+
+    setFeedState(key, 'LOADING', 'loading');
 
     // Try localStorage cache first
     const cacheKey = SAT_TLE_CACHE_PREFIX + key;
@@ -143,17 +204,20 @@ async function fetchConstellationTLEs(key) {
         }
     } catch { }
 
-    const baseUrl = getCelestrakUrl(key);
-    if (!baseUrl) { useFallbackOrbits(key); return; }
-
-    // Try direct + CORS proxies
-    const urls = [baseUrl];
-    CORS_PROXIES.forEach(proxy => urls.push(proxy + encodeURIComponent(baseUrl)));
-
-    for (const url of urls) {
+    try {
+        const items = await fetchTleApiItems(key);
         try {
-            const res = await fetchWithTimeout(url, { cache: 'no-store' }, 8000);
-            if (!res.ok) continue;
+            localStorage.setItem(cacheKey, JSON.stringify({ data: items, fetchTime: Date.now() }));
+        } catch { }
+        processConstellationData(key, items, 'tle-api');
+        return;
+    } catch { }
+
+    const baseUrl = getCelestrakUrl(key);
+    if (baseUrl) {
+        try {
+            const res = await fetchWithTimeout(baseUrl, { cache: 'no-store' }, 6500);
+            if (!res.ok) throw new Error(`CelesTrak returned ${res.status}`);
             const text = await res.text();
 
             // Parse raw TLE format (3 lines per satellite)
@@ -168,7 +232,7 @@ async function fetchConstellationTLEs(key) {
                     });
                 }
             }
-            if (items.length === 0 || !items[0].line1) continue;
+            if (items.length === 0 || !items[0].line1) throw new Error('CelesTrak returned no TLEs');
 
             try {
                 localStorage.setItem(cacheKey, JSON.stringify({
@@ -224,6 +288,8 @@ function processConstellationData(key, items, source) {
     satData[key].lastFetch = Date.now();
 
     createConstellationMarkers(key);
+    const sourceLabel = source === 'tle-api' || source === 'live' ? 'LIVE' : source === 'cache' ? 'CACHE' : 'STALE';
+    setFeedState(key, sourceLabel, source === 'stale-cache' ? 'warning' : 'live');
     updateSatCountDisplay();
 }
 
@@ -254,6 +320,7 @@ function useFallbackOrbits(key) {
     satData[key].fallbackSats = sats;
 
     createConstellationMarkers(key);
+    setFeedState(key, 'MODEL', 'warning');
     updateSatCountDisplay();
 }
 
@@ -276,70 +343,150 @@ function getOrbitalRenderRadius(altKm, body = 'earth', altExag = 3) {
     return EARTH_RADIUS_UNITS * (1 + (altKm / bodyRadiusKm) * altExag);
 }
 
-async function fetchMilitaryAircraft() {
-    try {
-        const res = await fetchWithTimeout('https://api.adsb.one/v2/mil', { cache: 'no-store' }, 8000);
-        if (!res.ok) return;
-
-        const data = await res.json();
-        if (!data || !data.ac) return;
-
-        const planes = [];
-        data.ac.slice(0, CONSTELLATIONS.military.maxCount).forEach(ac => {
-            if (ac.lat && ac.lon) {
-                planes.push({
-                    name: ac.flight ? ac.flight.trim() : (ac.r || ac.hex || 'Military Aircraft'),
-                    lat: ac.lat,
-                    lon: ac.lon,
-                    altKm: (ac.alt_geom || ac.alt_baro || 30000) * 0.0003048, // feet to km
-                    track: ac.track || 0,
-                    speedKmh: Math.round((ac.gs || 0) * 1.852)
-                });
-            }
-        });
-
-        if (!satData.military) satData.military = {};
-        satData.military.planes = planes;
-        satData.military.useFallbackPositions = false;
-
-        createConstellationMarkers('military');
-        updateSatCountDisplay();
-    } catch (e) {
-        console.error("Failed to fetch military aircraft", e);
+function getAircraftViewState(key) {
+    const distance = (typeof camera !== 'undefined' && typeof controls !== 'undefined')
+        ? camera.position.distanceTo(controls.target)
+        : 22;
+    let band = 'far';
+    let limit = key === 'military' ? 18 : 30;
+    if (distance <= 10.5) {
+        band = 'close';
+        limit = key === 'military' ? 120 : 300;
+    } else if (distance <= 19) {
+        band = 'medium';
+        limit = key === 'military' ? 60 : 120;
     }
+    return { distance, band, limit, center: getVisibleGlobeCenter() };
 }
 
-async function fetchCivilianAircraft() {
+function getVisibleGlobeCenter() {
+    if (typeof camera === 'undefined' || typeof earthGroup === 'undefined' || !earthGroup) return { lat: 0, lon: 0 };
+    const local = earthGroup.worldToLocal(camera.position.clone()).normalize();
+    const lat = Math.asin(Math.max(-1, Math.min(1, local.y))) * 180 / Math.PI;
+    const lon = Math.atan2(-local.z, local.x) * 180 / Math.PI;
+    return { lat, lon: normalizeLon(lon) };
+}
+
+function angularDistanceDegrees(a, b) {
+    const toRad = Math.PI / 180;
+    const lat1 = a.lat * toRad, lat2 = b.lat * toRad;
+    const dLon = normalizeLon(a.lon - b.lon) * toRad;
+    return Math.acos(Math.max(-1, Math.min(1,
+        Math.sin(lat1) * Math.sin(lat2) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(dLon)
+    ))) / toRad;
+}
+
+function applyAircraftLod(key, force = false) {
+    const data = satData[key];
+    if (!data?.allPlanes?.length) return;
+    const view = getAircraftViewState(key);
+    const signature = `${view.band}:${Math.round(view.center.lat / 4)}:${Math.round(view.center.lon / 4)}:${data.allPlanes.length}`;
+    if (!force && data.lodSignature === signature) return;
+
+    data.lodSignature = signature;
+    data.planes = data.allPlanes
+        .slice()
+        .sort((left, right) => angularDistanceDegrees(left, view.center) - angularDistanceDegrees(right, view.center))
+        .slice(0, Math.min(view.limit, data.allPlanes.length));
+    data.useFallbackPositions = false;
+    createConstellationMarkers(key);
+    setFeedState(key, `LIVE · ${data.planes.length} ${view.band.toUpperCase()}`, 'live');
+    updateSatCountDisplay();
+}
+
+function normalizeAircraft(ac, key) {
+    const lat = Number(ac.lat);
+    const lon = Number(ac.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const defaultAltFt = key === 'military' ? 30000 : 35000;
+    const rawAltitude = Number.isFinite(Number(ac.alt_geom)) ? Number(ac.alt_geom) :
+        Number.isFinite(Number(ac.alt_baro)) ? Number(ac.alt_baro) : defaultAltFt;
+    return {
+        name: ac.flight?.trim() || ac.r || ac.hex || (key === 'military' ? 'Military Aircraft' : 'Civilian Aircraft'),
+        lat,
+        lon,
+        altKm: Math.max(0, rawAltitude) * 0.0003048,
+        track: Number(ac.track) || 0,
+        speedKmh: Math.round((Number(ac.gs) || 0) * 1.852),
+    };
+}
+
+async function fetchAircraft(key, force = false) {
+    const data = satData[key] || (satData[key] = {});
+    if (data.fetchInFlight) return;
+    const view = getAircraftViewState(key);
+    const previousCenter = data.lastViewCenter;
+    const shifted = !previousCenter || angularDistanceDegrees(previousCenter, view.center) >= AIRCRAFT_VIEW_SHIFT_DEG;
+    if (!force && data.lastFetch && Date.now() - data.lastFetch < AIRCRAFT_REFRESH_MS && (!shifted || key === 'military')) {
+        applyAircraftLod(key);
+        return;
+    }
+
+    data.fetchInFlight = true;
+    setFeedState(key, 'LOADING', 'loading');
+    let lastError = null;
     try {
-        // Fetch aircraft over the US/Europe region roughly (to avoid 30MB all-world payload while still getting thousands of planes)
-        const res = await fetchWithTimeout('https://api.adsb.one/v2/point/40/-100/1500', { cache: 'no-store' }, 8000);
-        if (!res.ok) return;
+        for (const provider of AIRCRAFT_PROVIDERS) {
+            const path = key === 'military'
+                ? 'mil'
+                : `point/${view.center.lat.toFixed(3)}/${view.center.lon.toFixed(3)}/250`;
+            try {
+                const response = await requestAircraftUrl(`${provider.base}/${path}`);
+                if (!response.ok) throw new Error(`${provider.name} returned ${response.status}`);
+                let payload = await response.json();
+                if (!Array.isArray(payload?.ac)) throw new Error(`${provider.name} returned invalid aircraft data`);
+                let planes = payload.ac.map(ac => normalizeAircraft(ac, key)).filter(Boolean);
 
-        const data = await res.json();
-        if (!data || !data.ac) return;
+                // A camera pointed over open ocean can correctly return zero
+                // nearby civilian aircraft. Seed the first far-globe view from
+                // a busy region; later close views remain centred on the globe.
+                if (!planes.length && key === 'civilian' && !data.allPlanes?.length && view.band === 'far') {
+                    const seedResponse = await requestAircraftUrl(`${provider.base}/point/40/-100/250`);
+                    if (seedResponse.ok) {
+                        payload = await seedResponse.json();
+                        planes = Array.isArray(payload?.ac)
+                            ? payload.ac.map(ac => normalizeAircraft(ac, key)).filter(Boolean)
+                            : [];
+                    }
+                }
 
-        const planes = [];
-        data.ac.slice(0, CONSTELLATIONS.civilian.maxCount).forEach(ac => {
-            if (ac.lat && ac.lon) {
-                planes.push({
-                    name: ac.flight ? ac.flight.trim() : (ac.r || ac.hex || 'Civilian Aircraft'),
-                    lat: ac.lat,
-                    lon: ac.lon,
-                    altKm: (ac.alt_geom || ac.alt_baro || 35000) * 0.0003048, // feet to km
-                    track: ac.track || 0,
-                    speedKmh: Math.round((ac.gs || 0) * 1.852)
-                });
+                if (!planes.length) {
+                    data.source = provider.name;
+                    data.lastFetch = Date.now();
+                    data.lastViewCenter = view.center;
+                    if (data.allPlanes?.length) {
+                        data.lodSignature = null;
+                        applyAircraftLod(key, true);
+                        return;
+                    }
+                    data.allPlanes = [];
+                    data.planes = [];
+                    setFeedState(key, 'LIVE · 0', 'live');
+                    updateSatCountDisplay();
+                    return;
+                }
+
+                data.allPlanes = planes;
+                data.source = provider.name;
+                data.lastFetch = Date.now();
+                data.lastViewCenter = view.center;
+                data.lodSignature = null;
+                applyAircraftLod(key, true);
+                return;
+            } catch (error) {
+                lastError = error;
             }
-        });
+        }
+    } finally {
+        data.fetchInFlight = false;
+    }
 
-        if (!satData.civilian) satData.civilian = {};
-        satData.civilian.planes = planes;
-        satData.civilian.useFallbackPositions = false;
-
-        createConstellationMarkers('civilian');
-        updateSatCountDisplay();
-    } catch (e) {
-        console.error("Failed to fetch civilian aircraft", e);
+    if (data.allPlanes?.length) {
+        setFeedState(key, 'STALE', 'warning');
+        applyAircraftLod(key, true);
+    } else {
+        setFeedState(key, 'OFFLINE', 'error');
+        console.warn(`Aircraft feeds unavailable for ${key}`, lastError);
     }
 }
 
@@ -590,7 +737,7 @@ function updatePlanesPositions(key) {
         tailPts.push(pos.clone().add(backDir));
     }
     data.mesh.instanceMatrix.needsUpdate = true;
-    data.mesh.computeBoundingSphere();
+    data.mesh.geometry.computeBoundingSphere();
 
     if (!data.tails) {
         const lineGeo = new THREE.BufferGeometry().setFromPoints(tailPts);
@@ -621,7 +768,11 @@ function updateAllConstellations() {
 
     for (const key of Object.keys(CONSTELLATIONS)) {
         if (!CONSTELLATIONS[key].enabled) continue;
-        if (satData[key]?.planes) {
+        if (key === 'military' || key === 'civilian') {
+            fetchAircraft(key);
+            applyAircraftLod(key);
+            if (satData[key]?.planes) updatePlanesPositions(key);
+        } else if (satData[key]?.planes) {
             updatePlanesPositions(key);
         } else if (satData[key]?.useFallbackPositions) {
             updateFallbackPositions(key);
@@ -637,8 +788,12 @@ function toggleConstellation(key, enabled) {
     if (!config) return;
     config.enabled = enabled;
 
-    if (enabled && !satData[key]) {
-        fetchConstellationTLEs(key);
+    if (enabled) {
+        if (key === 'military' || key === 'civilian') {
+            fetchAircraft(key, !satData[key]?.allPlanes?.length);
+        } else if (!satData[key]) {
+            fetchConstellationTLEs(key);
+        }
     }
 
     const cb = document.querySelector(`input[data-sat="${key}"]`);

@@ -457,6 +457,18 @@
       flex-shrink: 0;
     }
 
+    .feed-state {
+      margin-left: auto;
+      font-size: 0.44rem;
+      letter-spacing: 0.7px;
+      color: #64748b;
+    }
+
+    .feed-state.live { color: #86efac; }
+    .feed-state.loading { color: #fde047; }
+    .feed-state.warning { color: #fdba74; }
+    .feed-state.error { color: #fca5a5; }
+
     /* Entity Detail Panel */
     .entity-detail-panel {
       position: absolute;
@@ -874,6 +886,14 @@
       font-size: 0.76rem;
     }
 
+    .orrery-readout .orrery-live {
+      color: #86efac;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.6px;
+      grid-column: 1 / -1;
+    }
+
     .small-action {
       height: 34px;
       padding: 0 12px;
@@ -1026,6 +1046,7 @@
       <strong id="orrery-title">Solar survey</strong>
       <span id="orrery-copy">A compact, scaled layout for comparing planets and mission destinations.</span>
       <button class="small-action" id="orrery-action">Open catalog</button>
+      <span class="orrery-live" id="orrery-live">CALCULATING CURRENT POSITIONS…</span>
     </div>
 
     <div class="data-panel">
@@ -1085,13 +1106,13 @@
         ['vendor/three.min.js?v=7', 'vendor/satellite.min.js?v=7'],
         [
           'vendor/OrbitControls.js?v=7',
-          'app.js?v=7',
+          'app.js?v=8',
           'earth.js?v=7',
-          'earth-views.js?v=7',
-          'satellites.js?v=8',
-          'tracking.js?v=7'
+          'earth-views.js?v=8',
+          'satellites.js?v=12',
+          'tracking.js?v=8'
         ],
-        ['moon-tools.js?v=7', 'exploration.js?v=7']
+        ['moon-tools.js?v=8', 'exploration.js?v=11']
       ];
       const textureScripts = ['moon-texture.js?v=7', 'mars-texture.js?v=7'];
 
