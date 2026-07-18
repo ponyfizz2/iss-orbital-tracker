@@ -6,9 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ISS ORBITAL TRACKER</title>
   <meta name="description" content="Real-time International Space Station orbital tracker with 3D globe visualization">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.1/dist/satellite.min.js"></script>
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
     rel="stylesheet">
@@ -1068,15 +1065,92 @@
     </div>
   </div>
 
-  <script src="moon-texture.js?v=3"></script>
-  <script src="mars-texture.js?v=3"></script>
-  <script src="app.js?v=4"></script>
-  <script src="earth.js?v=3"></script>
-  <script src="earth-views.js?v=4"></script>
-  <script src="moon-tools.js?v=4"></script>
-  <script src="satellites.js?v=4"></script>
-  <script src="tracking.js?v=4"></script>
-  <script src="exploration.js?v=2"></script>
+  <script>
+    (() => {
+      const scriptGroups = [
+        ['vendor/three.min.js?v=6'],
+        [
+          'vendor/OrbitControls.js?v=6',
+          'vendor/satellite.min.js?v=6'
+        ],
+        ['moon-texture.js?v=6', 'mars-texture.js?v=6'],
+        ['app.js?v=6'],
+        ['earth.js?v=6', 'earth-views.js?v=6', 'satellites.js?v=6', 'tracking.js?v=6'],
+        ['moon-tools.js?v=6', 'exploration.js?v=6']
+      ];
+
+      const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+      function loadOnce(src, attempt) {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          const separator = src.includes('?') ? '&' : '?';
+          script.src = attempt === 0 ? src : `${src}${separator}retry=${attempt}-${Date.now()}`;
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => {
+            script.remove();
+            reject(new Error(`Unable to load ${src}`));
+          };
+          document.head.appendChild(script);
+        });
+      }
+
+      async function loadWithRetry(src, attempts = 3) {
+        let lastError;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          try {
+            await loadOnce(src, attempt);
+            return;
+          } catch (error) {
+            lastError = error;
+            if (attempt < attempts - 1) await wait(400 * (attempt + 1));
+          }
+        }
+        throw lastError;
+      }
+
+      function showLoadError(error) {
+        console.error('ISS Tracker could not finish loading.', error);
+        const loading = document.getElementById('loading-screen');
+        if (!loading) return;
+        loading.replaceChildren();
+
+        const title = document.createElement('p');
+        title.textContent = 'CONNECTION INTERRUPTED';
+        title.style.cssText = 'letter-spacing:3px;font:700 .75rem JetBrains Mono,monospace;color:#fca5a5';
+
+        const detail = document.createElement('p');
+        detail.textContent = 'A required file could not be loaded. Check your connection and try again.';
+        detail.style.cssText = 'max-width:340px;text-align:center;color:#94a3b8;font-size:.8rem;line-height:1.5';
+
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry';
+        retry.className = 'btn';
+        retry.style.cssText = 'width:auto;padding:10px 24px;margin-top:8px';
+        retry.addEventListener('click', () => window.location.reload());
+
+        loading.append(title, detail, retry);
+      }
+
+      async function boot() {
+        try {
+          for (const group of scriptGroups) {
+            await Promise.all(group.map(src => loadWithRetry(src)));
+          }
+          if (typeof window.startISSApp !== 'function') {
+            throw new Error('Application entry point is unavailable');
+          }
+          await window.startISSApp();
+        } catch (error) {
+          showLoadError(error);
+        }
+      }
+
+      boot();
+    })();
+  </script>
 </body>
 
 </html>
