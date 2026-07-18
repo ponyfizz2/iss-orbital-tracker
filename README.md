@@ -6,7 +6,7 @@ An interactive browser-based tracker for the International Space Station, Earth 
 
 - Live ISS position, altitude, speed, ground track, footprint, and country/ocean readout
 - TLE/SGP4 fallback when the live ISS telemetry service is unavailable
-- Matrix, satellite-imagery, hologram, coloured lunar-geology, Mars, and live solar-system views
+- Matrix, satellite-imagery, hologram, coloured lunar-geology, dedicated views for every planet, and a live solar-system view
 - Date-driven positions for all eight planets using JPL approximate Keplerian elements
 - Optional satellite constellations with visible live/cache/model feed status
 - Zoom-aware military and civilian aircraft layers that reveal more traffic as the camera moves closer

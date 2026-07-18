@@ -31,6 +31,34 @@ let holoDataPoints = null;
 let holoInnerGlow = null;
 let holoScanAngle = 0;
 
+// Dedicated full-globe planet views. Earth already has the richer Satellite
+// mode; Mars keeps its embedded surface map. The remaining planets use
+// deterministic procedural maps so the views stay fast and work offline.
+const DEDICATED_PLANET_KEYS = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
+const PLANET_VIEW_CONFIG = {
+    mercury: { name: 'Mercury', tilt: 0.03, base: '#77736d', atmosphere: null, diameter: '4,879 km', day: '176 Earth days', summary: 'Cratered, airless inner world with extreme day-to-night temperatures.' },
+    venus: { name: 'Venus', tilt: 177.4, base: '#d89a49', atmosphere: 0xf4c36b, diameter: '12,104 km', day: '243 Earth days', summary: 'A cloud-wrapped world with a dense carbon-dioxide atmosphere.' },
+    mars: { name: 'Mars', tilt: 25.2, base: '#b85132', atmosphere: 0xe77b55, diameter: '6,779 km', day: '24 h 37 m', summary: 'Cold desert world marked by giant volcanoes, canyons, and polar caps.' },
+    jupiter: { name: 'Jupiter', tilt: 3.1, base: '#b9916f', atmosphere: 0xe8c6a5, diameter: '139,820 km', day: '9 h 56 m', summary: 'The largest planet, with fast cloud bands and the Great Red Spot.' },
+    saturn: { name: 'Saturn', tilt: 26.7, base: '#d8c08d', atmosphere: 0xf1deb0, diameter: '116,460 km', day: '10 h 42 m', summary: 'A low-density gas giant surrounded by a bright, complex ring system.' },
+    uranus: { name: 'Uranus', tilt: 97.8, base: '#83cbd2', atmosphere: 0xa7f0f0, diameter: '50,724 km', day: '17 h 14 m', summary: 'A pale ice giant rotating on its side, encircled by narrow dark rings.' },
+    neptune: { name: 'Neptune', tilt: 28.3, base: '#2559b5', atmosphere: 0x4f8fff, diameter: '49,244 km', day: '16 h 6 m', summary: 'A deep-blue ice giant with supersonic winds and evolving dark storms.' },
+};
+
+let planetViewGroups = {};
+
+function isPlanetViewMode(mode) {
+    return DEDICATED_PLANET_KEYS.includes(mode);
+}
+
+function getActiveBodyForView(mode) {
+    if (mode === 'moon' || isPlanetViewMode(mode)) return mode;
+    return 'earth';
+}
+
+window.isPlanetViewMode = isPlanetViewMode;
+window.getActiveBodyForView = getActiveBodyForView;
+
 function registerEmbeddedTextures() {
     const loader = new THREE.TextureLoader();
 
@@ -502,6 +530,206 @@ function setMoonGeologyEnabled(enabled) {
 
 window.setMoonGeologyEnabled = setMoonGeologyEnabled;
 
+/* ====== DEDICATED PLANET GLOBES ====== */
+function seededPlanetRandom(seed) {
+    let state = seed >>> 0;
+    return () => {
+        state += 0x6D2B79F5;
+        let value = state;
+        value = Math.imul(value ^ value >>> 15, value | 1);
+        value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+        return ((value ^ value >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+function drawWavyBand(ctx, y, height, color, wave, phase, width) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= width; x += 16) {
+        ctx.lineTo(x, y + Math.sin(x * 0.018 + phase) * wave);
+    }
+    for (let x = width; x >= 0; x -= 16) {
+        ctx.lineTo(x, y + height + Math.sin(x * 0.014 + phase + 1.7) * wave);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+}
+
+function createPlanetSurfaceTexture(key) {
+    const config = PLANET_VIEW_CONFIG[key];
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const random = seededPlanetRandom(key.split('').reduce((sum, char) => sum + char.charCodeAt(0) * 97, 17));
+    const baseGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    baseGradient.addColorStop(0, config.base);
+    baseGradient.addColorStop(0.5, config.base);
+    baseGradient.addColorStop(1, '#171c2a');
+    ctx.fillStyle = baseGradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (key === 'mercury') {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < image.data.length; i += 4) {
+            const grain = Math.floor((random() - 0.5) * 52);
+            image.data[i] = Math.max(35, Math.min(190, image.data[i] + grain));
+            image.data[i + 1] = Math.max(35, Math.min(185, image.data[i + 1] + grain));
+            image.data[i + 2] = Math.max(32, Math.min(175, image.data[i + 2] + grain));
+        }
+        ctx.putImageData(image, 0, 0);
+        for (let i = 0; i < 240; i++) {
+            const x = random() * canvas.width;
+            const y = random() * canvas.height;
+            const radius = 2 + random() * random() * 24;
+            ctx.beginPath();
+            ctx.ellipse(x, y, radius, radius * (0.55 + random() * 0.45), 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(35,31,28,${0.12 + random() * 0.28})`;
+            ctx.fill();
+            ctx.strokeStyle = `rgba(222,216,202,${0.12 + random() * 0.2})`;
+            ctx.lineWidth = Math.max(1, radius * 0.08);
+            ctx.stroke();
+        }
+    } else if (key === 'venus') {
+        const colors = ['#7f4b24', '#a8642b', '#d28b3d', '#edb75e', '#c77832', '#f2cf80'];
+        for (let i = 0; i < 28; i++) {
+            drawWavyBand(ctx, i * 19 - 10, 18 + random() * 14, colors[i % colors.length], 5 + random() * 9, random() * 9, canvas.width);
+        }
+        ctx.globalAlpha = 0.32;
+        ctx.lineWidth = 7;
+        for (let i = 0; i < 45; i++) {
+            const y = random() * canvas.height;
+            ctx.beginPath();
+            ctx.moveTo(-20, y);
+            ctx.bezierCurveTo(240, y - 90, 650, y + 90, 1044, y - 20);
+            ctx.strokeStyle = i % 2 ? '#ffe1a1' : '#6f3c20';
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+    } else if (key === 'jupiter') {
+        const colors = ['#e7d2bb', '#9f6d55', '#d3ae8d', '#68483d', '#f1dfc6', '#b8795a', '#d6b692', '#855746'];
+        for (let i = 0; i < 26; i++) {
+            drawWavyBand(ctx, i * 21 - 8, 18 + random() * 11, colors[i % colors.length], 3 + random() * 8, random() * 8, canvas.width);
+        }
+        ctx.beginPath();
+        ctx.ellipse(735, 332, 76, 36, -0.08, 0, Math.PI * 2);
+        ctx.fillStyle = '#a94935';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(735, 331, 55, 21, -0.08, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,205,165,.58)';
+        ctx.lineWidth = 7;
+        ctx.stroke();
+    } else if (key === 'saturn') {
+        const colors = ['#e6d4ab', '#c8ad77', '#f0dfb7', '#b99c6b', '#ddc592', '#f3e6c6'];
+        for (let i = 0; i < 40; i++) {
+            drawWavyBand(ctx, i * 13 - 5, 11 + random() * 6, colors[i % colors.length], 1 + random() * 3, random() * 8, canvas.width);
+        }
+    } else if (key === 'uranus') {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, '#b9eced');
+        gradient.addColorStop(0.48, '#75bec9');
+        gradient.addColorStop(1, '#4d8e9d');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < 18; i++) {
+            drawWavyBand(ctx, i * 31, 3 + random() * 4, 'rgba(225,255,255,.16)', 1.5, random() * 5, canvas.width);
+        }
+    } else if (key === 'neptune') {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, '#5d8eea');
+        gradient.addColorStop(0.48, '#2453ad');
+        gradient.addColorStop(1, '#102f78');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < 22; i++) {
+            drawWavyBand(ctx, i * 24, 4 + random() * 8, i % 3 ? 'rgba(117,173,255,.16)' : 'rgba(230,245,255,.24)', 3 + random() * 5, random() * 8, canvas.width);
+        }
+        ctx.beginPath();
+        ctx.ellipse(690, 320, 62, 28, -0.12, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(13,28,74,.78)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(410, 195, 75, 8, -0.08, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(240,249,255,.72)';
+        ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    return texture;
+}
+
+function addPlanetRings(group, key) {
+    if (key !== 'saturn' && key !== 'uranus') return;
+    const ringSets = key === 'saturn'
+        ? [[5.8, 6.65, 0xe8d8b4, 0.58], [6.82, 7.58, 0xc8aa78, 0.78], [7.72, 8.75, 0xead8aa, 0.5]]
+        : [[6.35, 6.48, 0x9cd7d8, 0.38], [7.18, 7.31, 0x7eafb2, 0.32]];
+    ringSets.forEach(([inner, outer, color, opacity]) => {
+        const ring = new THREE.Mesh(
+            new THREE.RingGeometry(inner, outer, 160),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false })
+        );
+        ring.rotation.x = Math.PI / 2;
+        ring.renderOrder = 2;
+        group.add(ring);
+    });
+}
+
+function createPlanetView(key) {
+    if (!PLANET_VIEW_CONFIG[key] || key === 'mars' || planetViewGroups[key]) return;
+    const config = PLANET_VIEW_CONFIG[key];
+    const group = new THREE.Group();
+    const texture = createPlanetSurfaceTexture(key);
+    const material = new THREE.MeshPhongMaterial({
+        map: texture,
+        bumpMap: key === 'mercury' ? texture : null,
+        bumpScale: key === 'mercury' ? 0.035 : 0,
+        specular: new THREE.Color(key === 'mercury' ? 0x242424 : 0x3a3328),
+        shininess: key === 'venus' || key === 'jupiter' ? 16 : 5,
+    });
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 96, 64), material);
+    sphere.userData.planetKey = key;
+    // Start the storm worlds on their most recognizable hemispheres. Users can
+    // still rotate the globe freely with the shared Rotation control.
+    if (key === 'jupiter') sphere.rotation.y = -2.1;
+    if (key === 'neptune') sphere.rotation.y = -1.8;
+    group.add(sphere);
+
+    if (config.atmosphere) {
+        const atmosphere = new THREE.Mesh(
+            new THREE.SphereGeometry(EARTH_RADIUS_UNITS * 1.025, 64, 48),
+            new THREE.MeshBasicMaterial({ color: config.atmosphere, transparent: true, opacity: key === 'venus' ? 0.16 : 0.08, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false })
+        );
+        atmosphere.renderOrder = 1;
+        group.add(atmosphere);
+    }
+
+    addPlanetRings(group, key);
+    group.rotation.z = config.tilt * Math.PI / 180;
+    group.visible = false;
+    planetViewGroups[key] = group;
+    earthGroup.add(group);
+}
+
+function updatePlanetViewReadout(key) {
+    const config = PLANET_VIEW_CONFIG[key];
+    if (!config) return;
+    const title = document.getElementById('orrery-title');
+    const copy = document.getElementById('orrery-copy');
+    const live = document.getElementById('orrery-live');
+    const focus = document.getElementById('explore-focus');
+    if (title) title.textContent = config.name;
+    if (copy) copy.textContent = `${config.diameter} diameter · ${config.day} rotation · ${config.summary}`;
+    if (live) live.textContent = `DEDICATED PLANET GLOBE · ${config.tilt.toFixed(1)}° AXIAL TILT · VISUAL MODEL`;
+    if (focus) focus.textContent = `${config.name} globe`;
+}
+
+window.updatePlanetViewReadout = updatePlanetViewReadout;
+
 /* ====== MARS MODE ====== */
 let marsSphere = null;
 
@@ -526,7 +754,7 @@ function createMarsView() {
 /* ====== VIEW MODE SWITCHING ====== */
 function setViewMode(mode) {
     if (typeof currentViewMode !== 'undefined' && currentViewMode === mode) return;
-    const previousBody = (currentViewMode === 'moon' || currentViewMode === 'mars') ? currentViewMode : 'earth';
+    const previousBody = getActiveBodyForView(currentViewMode);
     currentViewMode = mode;
 
     // Update button states
@@ -546,7 +774,7 @@ function setViewMode(mode) {
     if (borderDots) borderDots.visible = dotVisible;
 
     // Toggle Earth-centric tracking and satellites
-    const activeBody = (mode === 'moon' || mode === 'mars') ? mode : 'earth';
+    const activeBody = getActiveBodyForView(mode);
     const isEarthView = (activeBody === 'earth');
 
     if (activeBody !== previousBody && typeof clearSelectedSatellite === 'function') {
@@ -607,6 +835,15 @@ function setViewMode(mode) {
     } else {
         if (marsSphere) marsSphere.visible = false;
     }
+
+    Object.entries(planetViewGroups).forEach(([key, group]) => {
+        group.visible = key === mode;
+    });
+    if (isPlanetViewMode(mode) && mode !== 'mars') {
+        createPlanetView(mode);
+        if (planetViewGroups[mode]) planetViewGroups[mode].visible = true;
+    }
+    if (isPlanetViewMode(mode)) updatePlanetViewReadout(mode);
 }
 
 /* Called each frame for active mode updates */

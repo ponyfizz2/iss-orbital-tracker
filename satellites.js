@@ -574,7 +574,7 @@ function createConstellationMarkers(key) {
 
     let activeBody = 'earth';
     if (typeof currentViewMode !== 'undefined') {
-        activeBody = (currentViewMode === 'moon' || currentViewMode === 'mars') ? currentViewMode : 'earth';
+        activeBody = typeof getActiveBodyForView === 'function' ? getActiveBodyForView(currentViewMode) : 'earth';
     }
     const targetBody = config.body || 'earth';
     const isVisible = config.enabled && (activeBody === targetBody);
@@ -747,7 +747,7 @@ function updatePlanesPositions(key) {
         );
         data.tails.renderOrder = 5;
         let activeBody = 'earth';
-        if (typeof currentViewMode !== 'undefined') activeBody = (currentViewMode === 'moon' || currentViewMode === 'mars') ? currentViewMode : 'earth';
+        if (typeof currentViewMode !== 'undefined') activeBody = typeof getActiveBodyForView === 'function' ? getActiveBodyForView(currentViewMode) : 'earth';
         const targetBody = CONSTELLATIONS[key].body || 'earth';
         data.tails.visible = CONSTELLATIONS[key].enabled && (activeBody === targetBody);
         earthGroup.add(data.tails);
@@ -801,7 +801,7 @@ function toggleConstellation(key, enabled) {
 
     let activeBody = 'earth';
     if (typeof currentViewMode !== 'undefined') {
-        activeBody = (currentViewMode === 'moon' || currentViewMode === 'mars') ? currentViewMode : 'earth';
+        activeBody = typeof getActiveBodyForView === 'function' ? getActiveBodyForView(currentViewMode) : 'earth';
     }
     const targetBody = config.body || 'earth';
     const isVisible = enabled && (activeBody === targetBody);
