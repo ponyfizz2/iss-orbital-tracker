@@ -1068,16 +1068,18 @@
   <script>
     (() => {
       const scriptGroups = [
-        ['vendor/three.min.js?v=6'],
+        ['vendor/three.min.js?v=7', 'vendor/satellite.min.js?v=7'],
         [
-          'vendor/OrbitControls.js?v=6',
-          'vendor/satellite.min.js?v=6'
+          'vendor/OrbitControls.js?v=7',
+          'app.js?v=7',
+          'earth.js?v=7',
+          'earth-views.js?v=7',
+          'satellites.js?v=7',
+          'tracking.js?v=7'
         ],
-        ['moon-texture.js?v=6', 'mars-texture.js?v=6'],
-        ['app.js?v=6'],
-        ['earth.js?v=6', 'earth-views.js?v=6', 'satellites.js?v=6', 'tracking.js?v=6'],
-        ['moon-tools.js?v=6', 'exploration.js?v=6']
+        ['moon-tools.js?v=7', 'exploration.js?v=7']
       ];
+      const textureScripts = ['moon-texture.js?v=7', 'mars-texture.js?v=7'];
 
       const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1142,7 +1144,15 @@
           if (typeof window.startISSApp !== 'function') {
             throw new Error('Application entry point is unavailable');
           }
-          await window.startISSApp();
+          const appReady = window.startISSApp();
+
+          // The embedded surface maps are several megabytes. They improve the
+          // Moon and Mars views but must not delay the live Earth tracker.
+          Promise.all(textureScripts.map(src => loadWithRetry(src)))
+            .then(() => window.registerEmbeddedTextures?.())
+            .catch(error => console.warn('Optional planet textures were unavailable.', error));
+
+          await appReady;
         } catch (error) {
           showLoadError(error);
         }

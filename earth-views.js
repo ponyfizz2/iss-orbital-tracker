@@ -29,29 +29,45 @@ let holoDataPoints = null;
 let holoInnerGlow = null;
 let holoScanAngle = 0;
 
+function registerEmbeddedTextures() {
+    const loader = new THREE.TextureLoader();
+
+    try {
+        if (!texCache.moon && typeof MOON_B64 !== 'undefined') {
+            const moonTex = loader.load(MOON_B64);
+            moonTex.anisotropy = 4;
+            texCache.moon = moonTex;
+            if (moonSphere) {
+                moonSphere.material.map = moonTex;
+                moonSphere.material.bumpMap = moonTex;
+                moonSphere.material.needsUpdate = true;
+            }
+        }
+    } catch { }
+
+    try {
+        if (!texCache.mars && typeof MARS_B64 !== 'undefined') {
+            const marsTex = loader.load(MARS_B64);
+            marsTex.anisotropy = 4;
+            texCache.mars = marsTex;
+            if (marsSphere) {
+                marsSphere.material.map = marsTex;
+                marsSphere.material.bumpMap = marsTex;
+                marsSphere.material.needsUpdate = true;
+            }
+        }
+    } catch { }
+}
+
+window.registerEmbeddedTextures = registerEmbeddedTextures;
+
 /* Preload all textures */
 function preloadTextures() {
     if (texturesLoading || texturesLoaded) return;
     texturesLoading = true;
     const loader = new THREE.TextureLoader();
 
-    // Load local base64 moon texture to bypass CORS
-    try {
-        if (typeof MOON_B64 !== 'undefined') {
-            const moonTex = loader.load(MOON_B64);
-            moonTex.anisotropy = 4;
-            texCache.moon = moonTex;
-        }
-    } catch { }
-
-    // Load local base64 mars texture to bypass CORS
-    try {
-        if (typeof MARS_B64 !== 'undefined') {
-            const marsTex = loader.load(MARS_B64);
-            marsTex.anisotropy = 4;
-            texCache.mars = marsTex;
-        }
-    } catch { }
+    registerEmbeddedTextures();
 
     const keys = Object.keys(TEX_URLS);
     let loaded = 0;
