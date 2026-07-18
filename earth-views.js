@@ -8,6 +8,7 @@ const TEX_URLS = {
     night: 'https://unpkg.com/three-globe/example/img/earth-night.jpg',
     bump: 'https://unpkg.com/three-globe/example/img/earth-topology.png',
     clouds: 'https://unpkg.com/three-globe/example/img/earth-clouds.png',
+    moonGeology: 'assets/moon-geology-usgs.jpg?v=1',
 };
 
 // Cached textures
@@ -21,6 +22,7 @@ let satCloudSphere = null;
 let satAtmoSphere = null;
 let satNightMaterial = null;
 let satDayMaterial = null;
+let moonGeologyEnabled = true;
 
 // Hologram mode objects
 let holoGroup = null;
@@ -38,7 +40,7 @@ function registerEmbeddedTextures() {
             moonTex.anisotropy = 4;
             texCache.moon = moonTex;
             if (moonSphere) {
-                moonSphere.material.map = moonTex;
+                moonSphere.material.map = (moonGeologyEnabled ? texCache.moonGeology : null) || moonTex;
                 moonSphere.material.bumpMap = moonTex;
                 moonSphere.material.needsUpdate = true;
             }
@@ -75,6 +77,10 @@ function preloadTextures() {
         loader.load(TEX_URLS[key], (tex) => {
             tex.anisotropy = 4;
             texCache[key] = tex;
+            if (key === 'moonGeology' && moonSphere && moonGeologyEnabled) {
+                moonSphere.material.map = tex;
+                moonSphere.material.needsUpdate = true;
+            }
             loaded++;
             if (loaded === keys.length) { texturesLoaded = true; texturesLoading = false; }
         }, undefined, () => { loaded++; if (loaded === keys.length) { texturesLoaded = true; texturesLoading = false; } });
@@ -472,11 +478,11 @@ function createMoonView() {
 
     const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
     const mat = new THREE.MeshPhongMaterial({
-        map: texCache.moon || null,
+        map: (moonGeologyEnabled ? texCache.moonGeology : null) || texCache.moon || null,
         bumpMap: texCache.moon || null,
-        bumpScale: 0.05,
-        specular: new THREE.Color(0x333333),
-        shininess: 5,
+        bumpScale: 0.045,
+        specular: new THREE.Color(0x202020),
+        shininess: 3,
     });
 
     moonSphere = new THREE.Mesh(geo, mat);
@@ -484,6 +490,17 @@ function createMoonView() {
     moonSphere.visible = false;
     earthGroup.add(moonSphere);
 }
+
+function setMoonGeologyEnabled(enabled) {
+    moonGeologyEnabled = Boolean(enabled);
+    if (!moonSphere) createMoonView();
+    if (!moonSphere) return;
+    moonSphere.material.map = (moonGeologyEnabled ? texCache.moonGeology : null) || texCache.moon || null;
+    moonSphere.material.bumpMap = texCache.moon || moonSphere.material.bumpMap;
+    moonSphere.material.needsUpdate = true;
+}
+
+window.setMoonGeologyEnabled = setMoonGeologyEnabled;
 
 /* ====== MARS MODE ====== */
 let marsSphere = null;

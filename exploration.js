@@ -76,8 +76,10 @@ const EXPLORATION_TOURS = [
     note: 'Pulls back into a compact orrery for comparing the inner and outer planets, then lets the catalog jump to each body.',
     run: () => {
       setBodyMode('solar');
-      moveCameraTo(new THREE.Vector3(0, 34, 42), new THREE.Vector3(0, 0, 0));
-      selectSolarObject('earth');
+      solarSelectedKey = 'earth';
+      updateSolarEphemeris(true);
+      updateSolarReadout();
+      moveCameraTo(new THREE.Vector3(0, 65, 86), new THREE.Vector3(0, 0, 0));
     },
   },
 ];
@@ -92,18 +94,25 @@ const CATALOG_OBJECTS = [
   { key: 'venus', name: 'Venus', type: 'planet', mode: 'solar', tag: 'inner planet', note: 'Cloud-covered world and near twin of Earth by size.' },
   { key: 'jupiter', name: 'Jupiter', type: 'planet', mode: 'solar', tag: 'gas giant', note: 'Largest planet in the system, scaled down here for usable comparison.' },
   { key: 'saturn', name: 'Saturn', type: 'planet', mode: 'solar', tag: 'rings', note: 'Ringed gas giant represented with a tilted ring plane.' },
+  { key: 'uranus', name: 'Uranus', type: 'planet', mode: 'solar', tag: 'ice giant', note: 'Ice giant placed from its current JPL-derived heliocentric position.' },
+  { key: 'neptune', name: 'Neptune', type: 'planet', mode: 'solar', tag: 'ice giant', note: 'Outermost major planet in the live compact orrery.' },
   { key: 'hubble', name: 'Hubble Space Telescope', type: 'spacecraft', mode: 'dots', tag: 'toggle layer', note: 'Enables and frames the Hubble orbital layer.' },
   { key: 'starlink', name: 'Starlink shell', type: 'constellation', mode: 'dots', tag: 'toggle layer', note: 'Enables a large low-orbit satellite shell for scale comparison.' },
   { key: 'gps', name: 'GPS constellation', type: 'constellation', mode: 'dots', tag: 'toggle layer', note: 'Enables medium-Earth navigation satellites far above low orbit.' },
 ];
 
+// JPL approximate Keplerian elements and rates for 1800–2050. Positions are
+// recalculated from the current UTC time; display radii are compacted so all
+// eight planets remain usable in one interactive view.
 const SOLAR_PLANETS = [
-  { key: 'mercury', name: 'Mercury', radius: 0.28, orbit: 4.4, color: 0xa7a29c, speed: 0.010, copy: 'A small, fast world skimming close to the Sun.' },
-  { key: 'venus', name: 'Venus', radius: 0.48, orbit: 6.2, color: 0xeab676, speed: 0.007, copy: 'A bright, cloud-covered planet with a crushing atmosphere.' },
-  { key: 'earth', name: 'Earth', radius: 0.52, orbit: 8.2, color: 0x3b82f6, speed: 0.0058, copy: 'The reference world for live ISS tracking and day-night geometry.' },
-  { key: 'mars', name: 'Mars', radius: 0.38, orbit: 10.5, color: 0xd65f3a, speed: 0.0046, copy: 'Cold desert planet with active orbital reconnaissance missions.' },
-  { key: 'jupiter', name: 'Jupiter', radius: 1.05, orbit: 15.4, color: 0xd7b28c, speed: 0.0026, copy: 'A banded gas giant anchoring the outer-system scale.' },
-  { key: 'saturn', name: 'Saturn', radius: 0.92, orbit: 20.6, color: 0xe2c27e, speed: 0.0021, copy: 'A ringed planet shown with a tilted, inspectable ring plane.' },
+  { key: 'mercury', name: 'Mercury', radius: 0.28, orbit: 4.4, color: 0xa7a29c, copy: 'A small, fast world skimming close to the Sun.', elements: [[0.38709927, 0.20563593, 7.00497902, 252.25032350, 77.45779628, 48.33076593], [0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081]] },
+  { key: 'venus', name: 'Venus', radius: 0.48, orbit: 6.2, color: 0xeab676, copy: 'A bright, cloud-covered planet with a crushing atmosphere.', elements: [[0.72333566, 0.00677672, 3.39467605, 181.97909950, 131.60246718, 76.67984255], [0.00000390, -0.00004107, -0.00078890, 58517.81538729, 0.00268329, -0.27769418]] },
+  { key: 'earth', name: 'Earth', radius: 0.52, orbit: 8.2, color: 0x3b82f6, copy: 'The reference world for live ISS tracking and day-night geometry.', elements: [[1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0], [0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0]] },
+  { key: 'mars', name: 'Mars', radius: 0.38, orbit: 10.5, color: 0xd65f3a, copy: 'Cold desert planet with active orbital reconnaissance missions.', elements: [[1.52371034, 0.09339410, 1.84969142, -4.55343205, -23.94362959, 49.55953891], [0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343]] },
+  { key: 'jupiter', name: 'Jupiter', radius: 1.05, orbit: 15.4, color: 0xd7b28c, copy: 'A banded gas giant anchoring the outer-system scale.', elements: [[5.20288700, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909], [-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106]] },
+  { key: 'saturn', name: 'Saturn', radius: 0.92, orbit: 20.6, color: 0xe2c27e, copy: 'A ringed planet shown with a tilted, inspectable ring plane.', elements: [[9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448], [-0.00125060, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794]] },
+  { key: 'uranus', name: 'Uranus', radius: 0.72, orbit: 25.8, color: 0x93d9e8, copy: 'A pale ice giant rolling around the Sun on its side.', elements: [[19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.95427630, 74.01692503], [-0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589]] },
+  { key: 'neptune', name: 'Neptune', radius: 0.70, orbit: 31.2, color: 0x4169e1, copy: 'A deep-blue ice giant at the outer edge of the major-planet system.', elements: [[30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227, 131.78422574], [0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.00508664]] },
 ];
 
 let solarGroup = null;
@@ -111,7 +120,9 @@ let solarObjects = {};
 let solarRaycaster = null;
 let solarMouse = null;
 let solarSelectedKey = 'earth';
+let lastSolarEphemerisUpdate = 0;
 let explorationReady = false;
+let lastExplorationMode = 'dots';
 
 initExplorationUi();
 wrapExplorationHooks();
@@ -313,11 +324,94 @@ function syncExplorationMode(mode) {
       controls.minDistance = 3;
       controls.maxDistance = 180;
     }
-    moveCameraTo(new THREE.Vector3(0, 34, 42), new THREE.Vector3(0, 0, 0));
+    moveCameraTo(new THREE.Vector3(0, 65, 86), new THREE.Vector3(0, 0, 0));
   } else if (typeof controls !== 'undefined' && controls) {
     controls.minDistance = 5.05;
     controls.maxDistance = 150;
+    if (lastExplorationMode === 'solar') {
+      const returnPosition = mode === 'moon' || mode === 'mars'
+        ? new THREE.Vector3(11, 6, 12)
+        : new THREE.Vector3(14, 10, 14);
+      moveCameraTo(returnPosition, new THREE.Vector3(0, 0, 0));
+    }
   }
+  lastExplorationMode = mode;
+}
+
+function getJulianDate(date) {
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+function getPlanetElementsAtDate(planet, date) {
+  const centuries = (getJulianDate(date) - 2451545.0) / 36525;
+  return planet.elements[0].map((base, index) => base + planet.elements[1][index] * centuries);
+}
+
+function solveKeplerEquation(meanAnomaly, eccentricity) {
+  let eccentricAnomaly = meanAnomaly + eccentricity * Math.sin(meanAnomaly);
+  for (let i = 0; i < 8; i++) {
+    const delta = (eccentricAnomaly - eccentricity * Math.sin(eccentricAnomaly) - meanAnomaly) /
+      (1 - eccentricity * Math.cos(eccentricAnomaly));
+    eccentricAnomaly -= delta;
+    if (Math.abs(delta) < 1e-9) break;
+  }
+  return eccentricAnomaly;
+}
+
+function planetPositionFromElements(planet, elements, eccentricAnomaly = null) {
+  const [a, e, inclinationDeg, meanLongitudeDeg, perihelionDeg, nodeDeg] = elements;
+  const toRad = Math.PI / 180;
+  const meanAnomaly = ((meanLongitudeDeg - perihelionDeg + 540) % 360 - 180) * toRad;
+  const E = eccentricAnomaly ?? solveKeplerEquation(meanAnomaly, e);
+  const orbitalX = a * (Math.cos(E) - e);
+  const orbitalY = a * Math.sqrt(1 - e * e) * Math.sin(E);
+  const omega = (perihelionDeg - nodeDeg) * toRad;
+  const node = nodeDeg * toRad;
+  const inclination = inclinationDeg * toRad;
+  const cosW = Math.cos(omega), sinW = Math.sin(omega);
+  const cosN = Math.cos(node), sinN = Math.sin(node);
+  const cosI = Math.cos(inclination), sinI = Math.sin(inclination);
+  const eclipticX = (cosW * cosN - sinW * sinN * cosI) * orbitalX +
+    (-sinW * cosN - cosW * sinN * cosI) * orbitalY;
+  const eclipticY = (cosW * sinN + sinW * cosN * cosI) * orbitalX +
+    (-sinW * sinN + cosW * cosN * cosI) * orbitalY;
+  const eclipticZ = (sinW * sinI) * orbitalX + (cosW * sinI) * orbitalY;
+  const compactScale = planet.orbit / a;
+
+  return {
+    vector: new THREE.Vector3(eclipticX * compactScale, eclipticZ * compactScale, eclipticY * compactScale),
+    distanceAu: Math.sqrt(eclipticX ** 2 + eclipticY ** 2 + eclipticZ ** 2),
+  };
+}
+
+function makePlanetOrbitPoints(planet, date) {
+  const elements = getPlanetElementsAtDate(planet, date);
+  const points = [];
+  for (let i = 0; i <= 180; i++) {
+    points.push(planetPositionFromElements(planet, elements, (i / 180) * Math.PI * 2).vector);
+  }
+  return points;
+}
+
+function updateSolarEphemeris(force = false) {
+  if (!solarGroup) return;
+  const nowMs = Date.now();
+  if (!force && nowMs - lastSolarEphemerisUpdate < 15000) return;
+  lastSolarEphemerisUpdate = nowMs;
+  const now = new Date(nowMs);
+
+  SOLAR_PLANETS.forEach((planet) => {
+    const obj = solarObjects[planet.key];
+    if (!obj?.mesh) return;
+    const current = planetPositionFromElements(planet, getPlanetElementsAtDate(planet, now));
+    obj.mesh.position.copy(current.vector);
+    obj.distanceAu = current.distanceAu;
+    if (obj.label) obj.label.position.copy(current.vector).add(new THREE.Vector3(0, planet.radius + 0.68, 0));
+  });
+
+  const live = document.getElementById('orrery-live');
+  if (live) live.textContent = `LIVE · ${now.toISOString().slice(0, 19).replace('T', ' ')} UTC · JPL ELEMENTS`;
+  updateSolarReadout();
 }
 
 function createSolarSystemView() {
@@ -336,7 +430,7 @@ function createSolarSystemView() {
   );
   sun.userData.solarKey = 'sun';
   solarGroup.add(sun);
-  solarObjects.sun = { mesh: sun, copy: 'A compact reference Sun for the exploration survey.', name: 'Sun' };
+  solarObjects.sun = { mesh: sun, copy: 'The central star and reference origin for the live heliocentric survey.', name: 'Sun', distanceAu: 0 };
 
   const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: makeGlowTexture('rgba(255, 209, 102, 0.85)', 'rgba(255, 120, 60, 0)'),
@@ -347,31 +441,25 @@ function createSolarSystemView() {
   sunGlow.scale.set(6.8, 6.8, 1);
   sun.add(sunGlow);
 
+  const ephemerisDate = new Date();
   SOLAR_PLANETS.forEach((planet, index) => {
-    const orbit = new THREE.Mesh(
-      new THREE.RingGeometry(planet.orbit - 0.012, planet.orbit + 0.012, 160),
-      new THREE.MeshBasicMaterial({
+    const orbit = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(makePlanetOrbitPoints(planet, ephemerisDate)),
+      new THREE.LineBasicMaterial({
         color: index < 4 ? 0x38bdf8 : 0xfb923c,
         transparent: true,
         opacity: index < 4 ? 0.14 : 0.10,
-        side: THREE.DoubleSide,
         depthWrite: false,
       })
     );
-    orbit.rotation.x = Math.PI / 2;
     solarGroup.add(orbit);
-
-    const pivot = new THREE.Group();
-    pivot.rotation.y = index * 0.8;
-    solarGroup.add(pivot);
 
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(planet.radius, 36, 36),
       new THREE.MeshPhongMaterial({ color: planet.color, shininess: 18, emissive: planet.color, emissiveIntensity: 0.05 })
     );
-    mesh.position.set(planet.orbit, 0, 0);
     mesh.userData.solarKey = planet.key;
-    pivot.add(mesh);
+    solarGroup.add(mesh);
 
     if (planet.key === 'saturn') {
       const ring = new THREE.Mesh(
@@ -383,10 +471,9 @@ function createSolarSystemView() {
     }
 
     const label = makeSolarLabel(planet.name);
-    label.position.set(planet.orbit, planet.radius + 0.68, 0);
-    pivot.add(label);
+    solarGroup.add(label);
 
-    solarObjects[planet.key] = { mesh, pivot, label, ...planet };
+    solarObjects[planet.key] = { mesh, label, orbitLine: orbit, ...planet };
   });
 
   const dustGeo = new THREE.BufferGeometry();
@@ -408,17 +495,16 @@ function createSolarSystemView() {
   })));
 
   renderer.domElement.addEventListener('pointerdown', onSolarPointerDown);
+  updateSolarEphemeris(true);
 }
 
 function animateSolarSystem() {
   if (!solarGroup || !solarGroup.visible) return;
-  const timeScale = 1 + Math.sin(Date.now() * 0.00012) * 0.15;
+  updateSolarEphemeris();
   Object.values(solarObjects).forEach((obj) => {
-    if (obj.pivot) obj.pivot.rotation.y += obj.speed * timeScale;
     if (obj.mesh) obj.mesh.rotation.y += 0.008;
     if (obj.label && typeof camera !== 'undefined') obj.label.quaternion.copy(camera.quaternion);
   });
-  solarGroup.rotation.y += 0.0005;
 }
 
 function onSolarPointerDown(event) {
@@ -432,20 +518,32 @@ function onSolarPointerDown(event) {
   if (hit?.object?.userData?.solarKey) selectSolarObject(hit.object.userData.solarKey);
 }
 
+function updateSolarReadout() {
+  const obj = solarObjects[solarSelectedKey];
+  if (!obj) return;
+  const title = document.getElementById('orrery-title');
+  const copy = document.getElementById('orrery-copy');
+  if (title) title.textContent = obj.name || solarSelectedKey;
+  if (copy) {
+    const distance = solarSelectedKey === 'sun' ? 'Heliocentric origin' : `${(obj.distanceAu || 0).toFixed(3)} AU from Sun now`;
+    copy.textContent = `${distance} · ${obj.copy || 'Current compact solar-system position.'}`;
+  }
+}
+
 function selectSolarObject(key) {
   createSolarSystemView();
   const obj = solarObjects[key];
   if (!obj) return;
   solarSelectedKey = key;
-  const title = document.getElementById('orrery-title');
-  const copy = document.getElementById('orrery-copy');
-  if (title) title.textContent = obj.name || key;
-  if (copy) copy.textContent = obj.copy || 'A compact solar-system reference object.';
+  updateSolarEphemeris(true);
+  updateSolarReadout();
   setFocus(obj.name || key);
 
   Object.entries(solarObjects).forEach(([entryKey, entry]) => {
     if (!entry.mesh?.material) return;
-    entry.mesh.material.emissiveIntensity = entryKey === solarSelectedKey ? 0.28 : 0.05;
+    if ('emissiveIntensity' in entry.mesh.material) {
+      entry.mesh.material.emissiveIntensity = entryKey === solarSelectedKey ? 0.28 : 0.05;
+    }
   });
 
   const target = new THREE.Vector3();

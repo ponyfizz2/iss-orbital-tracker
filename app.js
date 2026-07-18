@@ -3,8 +3,11 @@
 ========================= */
 const MAP_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAABlBMVEUAAAD///+l2Z/dAAABGklEQVRYw+2YMQ6DMBBDXyAnQC6AnAA5AXIB5AThApxA7kAnuUByAsvVvUpU9atYSmV7S/6D7dhS/T7LkhWfH+M48vXyInmRPX3OayYvshY8K9O77OlzXjN5kbXgWZneeZfN90xeZC14VqZ32dPnvGbyImvBszK98y6b75m8yFrwrEzvsifzImvBszK9y54+5zWTF1kLnpXpnXfZfM/kRdaCZ2V6lz15kbXgWZneZfM9kxdZC56V6V325EXWgmdlepc9fc5rJi+yFjwr0zvvsvmfyYusBc/K9C57+pzXTF5kLXhWpnfeZfM9kxdZC56V6V325EXWgmdlepfcJi+yFjwr07vsyYusBc/K9C578iJrwbMyvfMue/Ii6789PwE7F/K44WqJswAAAABJRU5ErkJggg==";
 const COUNTRIES_GEOJSON_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
-const ISS_TLE_URL_PRIMARY = "https://api.wheretheiss.at/v1/satellites/25544/tles";
-const ISS_TLE_URL_FALLBACK = "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE";
+const ISS_TLE_JSON_URLS = [
+  "https://api.wheretheiss.at/v1/satellites/25544/tles",
+  "https://tle.ivanstanojevic.me/api/tle/25544",
+];
+const ISS_TLE_TEXT_URL = "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE";
 const TLE_STORAGE_KEY = "iss_tle_cache_v1";
 const TLE_FETCH_TIMEOUT_MS = 7000;
 const TRACK_COLOR = 0x22c55e;

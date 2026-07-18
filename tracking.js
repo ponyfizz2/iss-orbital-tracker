@@ -38,15 +38,17 @@ async function refreshTLEIfNeeded(force = false) {
     const now = Date.now();
     if (!force && tle.satrec && (now - tle.lastFetch) < TLE_TTL_MS) return true;
     try { const cached = JSON.parse(localStorage.getItem(TLE_STORAGE_KEY) || "null"); if (cached?.line1 && cached?.line2 && !tle.satrec) { tle.line1 = cached.line1; tle.line2 = cached.line2; tle.satrec = satellite.twoline2satrec(tle.line1, tle.line2); tle.lastFetch = cached.lastFetch || 0; } } catch { }
+    for (const url of ISS_TLE_JSON_URLS) {
+        try {
+            const res = await fetchWithTimeout(url, { cache: "no-store" }, 6500); if (!res.ok) throw 0;
+            const j = await res.json(); if (!j.line1 || !j.line2) throw 0;
+            tle.line1 = j.line1.trim(); tle.line2 = j.line2.trim(); tle.satrec = satellite.twoline2satrec(tle.line1, tle.line2); tle.lastFetch = now;
+            try { localStorage.setItem(TLE_STORAGE_KEY, JSON.stringify({ line1: tle.line1, line2: tle.line2, lastFetch: now })); } catch { }
+            return true;
+        } catch { }
+    }
     try {
-        const res = await fetchWithTimeout(ISS_TLE_URL_PRIMARY, { cache: "no-store" }); if (!res.ok) throw 0;
-        const j = await res.json(); if (!j.line1 || !j.line2) throw 0;
-        tle.line1 = j.line1.trim(); tle.line2 = j.line2.trim(); tle.satrec = satellite.twoline2satrec(tle.line1, tle.line2); tle.lastFetch = now;
-        try { localStorage.setItem(TLE_STORAGE_KEY, JSON.stringify({ line1: tle.line1, line2: tle.line2, lastFetch: now })); } catch { }
-        return true;
-    } catch { }
-    try {
-        const res = await fetchWithTimeout(ISS_TLE_URL_FALLBACK, { cache: "no-store" });
+        const res = await fetchWithTimeout(ISS_TLE_TEXT_URL, { cache: "no-store" }, 6500);
         if (!res.ok) throw new Error(`TLE fallback returned ${res.status}`);
         const text = await res.text();
         const lines = text.split('\n').map(s => s.trim()).filter(Boolean);

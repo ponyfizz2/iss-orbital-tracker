@@ -22,6 +22,8 @@ function initMoonTools() {
     toolbar.className = 'moon-toolbar hidden';
     toolbar.innerHTML = `
         <div class="mt-label">MOON TOOLS</div>
+        <button class="mt-btn active" id="btn-moon-geology" title="USGS Unified Geologic Map of the Moon">🌈 Geology</button>
+        <span class="moon-source">USGS 1:5M</span>
         <button class="mt-btn active" data-tool="pan">🖐️ Pan</button>
         <button class="mt-btn" data-tool="distance">📏 Distance</button>
         <button class="mt-btn" data-tool="crater">⭕ Crater Area</button>
@@ -48,6 +50,8 @@ function initMoonTools() {
             pointer-events: auto;
             transition: opacity 0.3s, transform 0.3s;
             align-items: center;
+            max-width: calc(100vw - 20px);
+            overflow-x: auto;
         }
         .moon-toolbar.hidden {
             opacity: 0;
@@ -61,6 +65,17 @@ function initMoonTools() {
             margin-right: 12px;
             margin-left: 8px;
             font-family: 'JetBrains Mono', monospace;
+        }
+        #btn-moon-geology.active {
+            color: #f0abfc;
+            border-color: rgba(217, 70, 239, 0.65);
+            background: linear-gradient(90deg, rgba(239,68,68,0.14), rgba(59,130,246,0.14));
+        }
+        .moon-source {
+            color: #c084fc;
+            font: 0.52rem 'JetBrains Mono', monospace;
+            letter-spacing: 0.6px;
+            white-space: nowrap;
         }
         .mt-btn {
             background: rgba(255,255,255,0.05);
@@ -97,6 +112,13 @@ function initMoonTools() {
 
     document.getElementById('btn-clear-moon').addEventListener('click', () => {
         clearMoonVisuals();
+    });
+
+    document.getElementById('btn-moon-geology').addEventListener('click', (event) => {
+        const enabled = !event.currentTarget.classList.contains('active');
+        event.currentTarget.classList.toggle('active', enabled);
+        event.currentTarget.innerHTML = enabled ? '🌈 Geology' : '🌕 Natural';
+        if (typeof setMoonGeologyEnabled === 'function') setMoonGeologyEnabled(enabled);
     });
 
     // Pointer events on canvas
