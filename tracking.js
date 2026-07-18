@@ -287,4 +287,3 @@ function alignCylinderBetween(mesh, start, end) {
     mesh.position.copy(new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5));
     mesh.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize())); mesh.scale.set(1, len, 1);
 }
-function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }

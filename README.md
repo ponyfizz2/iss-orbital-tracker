@@ -25,6 +25,8 @@ Then open `http://localhost:4173`.
 
 The application uses public endpoints from Where the ISS at?, CelesTrak, Open Notify, ADS-B One, and public map/texture providers. Live layers gracefully fall back or report their unavailable state when a provider cannot be reached.
 
+Critical browser libraries are vendored in `vendor/` so a third-party CDN outage cannot prevent the tracker from starting. Their upstream MIT licenses are included alongside the files.
+
 ## License
 
 MIT

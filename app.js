@@ -50,6 +50,7 @@ let crewCount = null, crewNames = [];
 let lastRefreshTime = Date.now();
 let issSpeedKmh = 0;
 let currentViewMode = 'dots';
+let appBootStarted = false;
 
 /* FETCH HELPERS */
 async function fetchWithTimeout(url, opts = {}, timeoutMs = TLE_FETCH_TIMEOUT_MS) {
@@ -86,7 +87,10 @@ const ui = {
 };
 
 /* BOOT */
-window.onload = async () => {
+async function startISSApp() {
+  if (appBootStarted) return;
+  appBootStarted = true;
+
   initScene();
   preloadTextures(); // background-load satellite/weather textures
   const countriesReady = loadCountriesGeoJSON();
@@ -119,7 +123,9 @@ window.onload = async () => {
     document.getElementById('loading-screen').style.opacity = '0';
     setTimeout(() => { const ls = document.getElementById('loading-screen'); if (ls) ls.remove(); }, 500);
   }, 350);
-};
+}
+
+window.startISSApp = startISSApp;
 
 /* CREW */
 function fetchJSONP(url, timeoutMs = 5000) {
@@ -251,4 +257,11 @@ function initScene() {
     else if (key === '4') setViewMode('moon');
     else if (key === '5') setViewMode('mars');
   });
+}
+
+function onWindowResize() {
+  if (!camera || !renderer) return;
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
