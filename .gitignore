@@ -1,0 +1,11 @@
+# Original high-resolution source images; the optimized textures are embedded
+# in moon-texture.js and mars-texture.js for reliable static hosting.
+moon.jpg
+mars.jpg
+mars_4k.jpg
+
+# Scratch material and the unrelated prototype found beside the ISS app.
+test.txt
+Exoplanet Explorer/
+
+.DS_Store

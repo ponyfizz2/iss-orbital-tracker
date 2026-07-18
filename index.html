@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ISS ORBITAL TRACKER</title>
+  <meta name="description" content="Real-time International Space Station orbital tracker with 3D globe visualization">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.1/dist/satellite.min.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --primary: #facc15;
+      --bg: #020205;
+      --panel-bg: rgba(10, 10, 15, 0.92);
+      --track: #22c55e;
+      --muted: #94a3b8;
+      --line: rgba(255, 255, 255, 0.10);
+      --glass: rgba(12, 16, 24, 0.78);
+      --cyan: #38bdf8;
+      --rose: #fb7185;
+      --orange: #fb923c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: #fff;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 25px;
+    }
+
+    .header {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-left: 58px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.3rem;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      color: var(--primary);
+      text-shadow: 0 0 20px rgba(250, 204, 21, 0.35);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: livePulse 2s ease-in-out infinite;
+    }
+
+    @keyframes livePulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+      }
+
+      50% {
+        box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+      }
+    }
+
+    .controls-panel {
+      position: absolute;
+      right: 25px;
+      top: 25px;
+      width: 300px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(15px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 15px;
+      padding: 18px;
+      pointer-events: auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+      transition: transform .3s ease, opacity .3s ease;
+    }
+
+    .controls-panel.collapsed {
+      transform: translateX(340px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .panel-toggle {
+      display: none;
+      position: absolute;
+      right: 25px;
+      top: 25px;
+      width: 42px;
+      height: 42px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(15px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      pointer-events: auto;
+      cursor: pointer;
+      color: #fff;
+      font-size: 1.2rem;
+      z-index: 20;
+    }
+
+    .panel-toggle:hover {
+      border-color: var(--primary);
+    }
+
+    .control-group {
+      margin-bottom: 12px;
+    }
+
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: var(--primary);
+      height: 4px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-family: 'Inter', sans-serif;
+      transition: all .15s ease;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(250, 204, 21, 0.45);
+    }
+
+    .btn-green {
+      background: rgba(34, 197, 94, 0.10);
+      border-color: rgba(34, 197, 94, 0.35);
+      color: #d1fae5;
+    }
+
+    .btn-green:hover {
+      background: rgba(34, 197, 94, 0.17);
+      border-color: rgba(34, 197, 94, 0.6);
+    }
+
+    .btn-on {
+      outline: 2px solid rgba(34, 197, 94, 0.35);
+    }
+
+    .kbd {
+      font-size: 0.5rem;
+      opacity: 0.4;
+      margin-left: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .view-switcher {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .view-btn {
+      flex: 1;
+      padding: 7px 6px;
+      background: rgba(255, 255, 255, 0.03);
+      border: none;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+      font-size: 0.55rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all .2s ease;
+    }
+
+    .view-btn:last-child {
+      border-right: none;
+    }
+
+    .view-btn:nth-child(3n) {
+      border-right: none;
+    }
+
+    .view-btn:nth-last-child(-n + 3) {
+      border-bottom: none;
+    }
+
+    .view-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+    }
+
+    .view-btn.active {
+      background: rgba(34, 197, 94, 0.12);
+      color: #86efac;
+      box-shadow: inset 0 0 12px rgba(34, 197, 94, 0.1);
+    }
+
+    .view-btn[data-view="solar"].active {
+      background: rgba(56, 189, 248, 0.14);
+      color: #bae6fd;
+      box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.1);
+    }
+
+    .dot-mode-only {
+      transition: opacity .3s ease, max-height .3s ease;
+    }
+
+    .dot-mode-only.hidden {
+      opacity: 0.3;
+      pointer-events: none;
+    }
+
+    .loading-screen {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      transition: opacity .5s ease;
+    }
+
+    @keyframes spin {
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .data-panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(15px);
+      border-left: 4px solid var(--track);
+      padding: 20px 24px;
+      border-radius: 12px;
+      width: fit-content;
+      pointer-events: auto;
+      margin-top: auto;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+    }
+
+    .data-grid {
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 14px 44px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .data-item .label {
+      color: #8aa0b6;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .data-item .value {
+      color: #fff;
+      font-size: 1.5rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .crew-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 8px 14px;
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: 8px;
+      font-size: 0.75rem;
+      color: #86efac;
+      width: fit-content;
+      cursor: default;
+    }
+
+    .crew-badge:hover {
+      background: rgba(34, 197, 94, 0.14);
+    }
+
+    .refresh-bar {
+      height: 2px;
+      background: rgba(34, 197, 94, 0.15);
+      border-radius: 1px;
+      margin-top: 10px;
+      overflow: hidden;
+    }
+
+    .refresh-bar-fill {
+      height: 100%;
+      background: var(--track);
+      width: 0%;
+      transition: width 0.1s linear;
+      border-radius: 1px;
+    }
+
+    @media(max-width:768px) {
+      .panel-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .controls-panel {
+        right: 15px;
+        top: 15px;
+        width: 280px;
+      }
+
+      .controls-panel:not(.collapsed) {
+        transform: translateX(0);
+        opacity: 1;
+      }
+
+      .overlay {
+        padding: 15px;
+      }
+
+      .data-grid {
+        grid-template-columns: repeat(2, auto);
+        gap: 10px 30px;
+      }
+
+      .data-item .value {
+        font-size: 1.1rem;
+      }
+
+      .header h1 {
+        font-size: 1rem;
+        letter-spacing: 5px;
+      }
+    }
+
+    /* Satellite toggles */
+    .sat-toggles {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .sat-toggles .section-label {
+      font-size: 0.5rem;
+      letter-spacing: 3px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sat-toggles .section-label .sat-count {
+      font-size: 0.45rem;
+      color: var(--primary);
+      letter-spacing: 1px;
+    }
+
+    .sat-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.6rem;
+      color: #cbd5e1;
+      cursor: pointer;
+      padding: 3px 0;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.5px;
+      transition: color 0.2s;
+    }
+
+    .sat-toggle:hover {
+      color: #fff;
+    }
+
+    .sat-toggle input[type=checkbox] {
+      accent-color: var(--primary);
+      width: 13px;
+      height: 13px;
+      cursor: pointer;
+    }
+
+    .sat-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    /* Entity Detail Panel */
+    .entity-detail-panel {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 320px;
+      background: rgba(15, 20, 30, 0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 16px;
+      padding: 20px;
+      color: #fff;
+      z-index: 100;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: auto;
+    }
+
+    .entity-detail-panel.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -45%) scale(0.95);
+    }
+
+    .close-detail {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .close-detail:hover {
+      color: #fff;
+    }
+
+    .ed-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .ed-icon {
+      font-size: 2rem;
+      filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
+    }
+
+    .ed-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .ed-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .ed-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ed-label {
+      font-size: 0.65rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .ed-val {
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e2e8f0;
+    }
+
+    .explore-panel {
+      position: absolute;
+      left: 25px;
+      top: 92px;
+      width: min(380px, calc(100vw - 50px));
+      max-height: calc(100vh - 210px);
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      background: var(--glass);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      pointer-events: auto;
+    }
+
+    .explore-panel.collapsed {
+      transform: translateX(calc(-100% - 40px));
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .explore-toggle {
+      position: absolute;
+      left: 25px;
+      top: 25px;
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      background: var(--panel-bg);
+      backdrop-filter: blur(15px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #e2e8f0;
+      cursor: pointer;
+      pointer-events: auto;
+      z-index: 25;
+      font-size: 1rem;
+    }
+
+    .explore-toggle:hover {
+      border-color: rgba(56, 189, 248, 0.65);
+      color: #bae6fd;
+    }
+
+    .explore-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .explore-kicker,
+    .explore-tab,
+    .tour-label,
+    .catalog-meta,
+    .event-meta {
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .explore-kicker {
+      color: var(--cyan);
+      font-size: 0.58rem;
+      margin-bottom: 3px;
+    }
+
+    .explore-title {
+      margin: 0;
+      font-size: 1.05rem;
+      line-height: 1.2;
+      color: #f8fafc;
+    }
+
+    .explore-close {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      cursor: pointer;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+
+    .explore-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .explore-tab {
+      min-height: 36px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 0.56rem;
+    }
+
+    .explore-tab:last-child {
+      border-right: 0;
+    }
+
+    .explore-tab.active {
+      background: rgba(56, 189, 248, 0.11);
+      color: #bae6fd;
+    }
+
+    .explore-status {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .explore-stat {
+      background: rgba(4, 8, 14, 0.72);
+      padding: 10px 12px;
+      min-width: 0;
+    }
+
+    .explore-stat span {
+      display: block;
+      color: #94a3b8;
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+    }
+
+    .explore-stat strong {
+      display: block;
+      color: #f8fafc;
+      font-size: 0.85rem;
+      line-height: 1.3;
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .explore-content {
+      overflow: auto;
+      padding: 14px 16px 16px;
+    }
+
+    .explore-view {
+      display: none;
+    }
+
+    .explore-view.active {
+      display: grid;
+      gap: 14px;
+    }
+
+    .tour-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .tour-btn,
+    .catalog-row,
+    .event-row,
+    .small-action {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.045);
+      color: #e2e8f0;
+    }
+
+    .tour-btn {
+      min-height: 72px;
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tour-btn:hover,
+    .catalog-row:hover,
+    .small-action:hover {
+      border-color: rgba(56, 189, 248, 0.62);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    .tour-label {
+      display: block;
+      color: #bae6fd;
+      font-size: 0.58rem;
+      margin-bottom: 6px;
+    }
+
+    .tour-btn strong {
+      display: block;
+      font-size: 0.83rem;
+      line-height: 1.25;
+    }
+
+    .mission-note {
+      border-left: 3px solid var(--orange);
+      padding: 10px 12px;
+      background: rgba(251, 146, 60, 0.08);
+      border-radius: 0 8px 8px 0;
+      color: #fed7aa;
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .event-list,
+    .catalog-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .event-row,
+    .catalog-row {
+      padding: 10px 12px;
+    }
+
+    .event-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .event-row strong,
+    .catalog-row strong {
+      display: block;
+      font-size: 0.86rem;
+      line-height: 1.2;
+      color: #f8fafc;
+    }
+
+    .event-meta,
+    .catalog-meta {
+      display: block;
+      margin-top: 5px;
+      color: #94a3b8;
+      font-size: 0.52rem;
+    }
+
+    .event-time {
+      color: #86efac;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      white-space: nowrap;
+    }
+
+    .catalog-search {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+      color: #f8fafc;
+      padding: 0 12px;
+      font: 0.82rem 'Inter', system-ui, sans-serif;
+      outline: none;
+    }
+
+    .catalog-search:focus {
+      border-color: rgba(56, 189, 248, 0.7);
+    }
+
+    .catalog-row {
+      width: 100%;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .catalog-row .tag {
+      display: inline-block;
+      color: #0f172a;
+      background: #bae6fd;
+      border-radius: 999px;
+      padding: 2px 7px;
+      margin-top: 7px;
+      font-size: 0.56rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .orrery-readout {
+      position: absolute;
+      left: 50%;
+      bottom: 25px;
+      transform: translateX(-50%);
+      width: min(620px, calc(100vw - 50px));
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 12px 14px;
+      background: rgba(8, 12, 18, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      pointer-events: auto;
+      opacity: 0;
+      transform-origin: center bottom;
+      translate: 0 16px;
+      transition: opacity 0.25s ease, translate 0.25s ease;
+    }
+
+    .orrery-readout.visible {
+      opacity: 1;
+      translate: 0 0;
+    }
+
+    .orrery-readout strong {
+      color: #f8fafc;
+      font-size: 0.92rem;
+      line-height: 1.2;
+    }
+
+    .orrery-readout span {
+      color: #94a3b8;
+      font-size: 0.76rem;
+    }
+
+    .small-action {
+      height: 34px;
+      padding: 0 12px;
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    @media(max-width:900px) {
+      .explore-panel {
+        top: 70px;
+        left: 15px;
+        max-height: calc(100vh - 250px);
+      }
+
+      .explore-toggle {
+        left: 15px;
+        top: 15px;
+      }
+
+      .tour-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .orrery-readout {
+        grid-template-columns: 1fr;
+        bottom: 130px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="loading-screen" id="loading-screen">
+    <div
+      style="width:30px;height:30px;border:2px solid #333;border-top:2px solid var(--primary);border-radius:50%;animation:spin 1s linear infinite;margin-bottom:20px;">
+    </div>
+    <p style="letter-spacing:5px;font-size:0.7rem;font-family:'JetBrains Mono',monospace;">CALIBRATING ORBIT</p>
+  </div>
+
+  <div class="overlay">
+    <div class="header">
+      <h1>ISS ORBITAL TRACKER</h1>
+      <div class="live-dot" id="live-dot"></div>
+    </div>
+
+    <button class="panel-toggle" id="panel-toggle" type="button" aria-label="Toggle tracker controls">☰</button>
+    <button class="explore-toggle" id="explore-toggle" type="button" aria-label="Open exploration panel"
+      title="Open exploration panel">✦</button>
+
+    <div class="controls-panel" id="controls-panel">
+      <div class="view-switcher">
+        <button class="view-btn active" data-view="dots" id="view-dots">● Matrix</button>
+        <button class="view-btn" data-view="satellite" id="view-satellite">🌍 Satellite</button>
+        <button class="view-btn" data-view="hologram" id="view-hologram">⬡ Hologram</button>
+        <button class="view-btn" data-view="moon" id="view-moon">🌕 Moon</button>
+        <button class="view-btn" data-view="mars" id="view-mars">🔴 Mars</button>
+        <button class="view-btn" data-view="solar" id="view-solar">☉ Solar</button>
+      </div>
+      <div class="control-group dot-mode-only" id="resolution-group">
+        <label>Resolution <span id="val-den">40k</span></label>
+        <input type="range" id="dot-density" min="10000" max="80000" step="5000" value="40000">
+      </div>
+      <div class="control-group">
+        <label>Rotation <span id="val-rot">0</span></label>
+        <input type="range" id="rot-speed" min="0" max="0.005" step="0.0001" value="0">
+      </div>
+      <div class="control-group">
+        <label>Altitude Scale <span id="val-altx">3.0x</span></label>
+        <input type="range" id="alt-exag" min="1" max="10" step="0.1" value="3.0">
+      </div>
+      <div class="control-group">
+        <label>Refresh Rate <span id="val-refresh">30s</span></label>
+        <input type="range" id="refresh-rate" min="5" max="60" step="5" value="30">
+      </div>
+      <div class="row">
+        <button class="btn" id="reset-cam">Reset View <span class="kbd">R</span></button>
+        <button class="btn btn-green btn-on" id="toggle-tracker">Tracker: ON <span class="kbd">T</span></button>
+      </div>
+      <div class="row">
+        <button class="btn btn-green btn-on" id="toggle-daynight">Day/Night: ON <span class="kbd">D</span></button>
+        <button class="btn btn-green" id="toggle-follow">Follow: OFF <span class="kbd">F</span></button>
+      </div>
+      <div class="row">
+        <button class="btn btn-green btn-on" id="toggle-paths">Paths: ON <span class="kbd">P</span></button>
+        <button class="btn" id="reset-rotation" style="grid-column:span 1">Stop Spin <span class="kbd">S</span></button>
+      </div>
+      <div class="sat-toggles">
+        <div class="section-label">SATELLITES <span class="sat-count" id="sat-count"></span></div>
+        <label class="sat-toggle"><input type="checkbox" data-sat="tiangong"> <span class="sat-dot"
+            style="background:#ef4444"></span> Tiangong (CSS)</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="hubble"> <span class="sat-dot"
+            style="background:#eab308"></span> Hubble</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="starlink"> <span class="sat-dot"
+            style="background:#e2e8f0"></span> Starlink</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="iridium"> <span class="sat-dot"
+            style="background:#3b82f6"></span> Iridium NEXT</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="gps"> <span class="sat-dot"
+            style="background:#f97316"></span> GPS</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="lro"> <span class="sat-dot"
+            style="background:#94a3b8"></span> LRO (Moon)</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="mro"> <span class="sat-dot"
+            style="background:#fca5a5"></span> MRO (Mars)</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="military"> <span class="sat-dot"
+            style="background: #f97316"></span> Mil Aircraft</label>
+        <label class="sat-toggle"><input type="checkbox" data-sat="civilian"> <span class="sat-dot"
+            style="background: #38bdf8"></span> Civ Aircraft</label>
+      </div>
+    </div>
+
+    <section class="explore-panel" id="explore-panel" aria-label="Astronomy exploration panel">
+      <div class="explore-head">
+        <div>
+          <div class="explore-kicker">Deep Space Lab</div>
+          <h2 class="explore-title">Astronomy Explorer</h2>
+        </div>
+        <button class="explore-close" id="explore-close" aria-label="Hide exploration panel">×</button>
+      </div>
+      <div class="explore-tabs">
+        <button class="explore-tab active" data-explore-tab="tours">Tours</button>
+        <button class="explore-tab" data-explore-tab="events">Now</button>
+        <button class="explore-tab" data-explore-tab="catalog">Catalog</button>
+      </div>
+      <div class="explore-status">
+        <div class="explore-stat"><span>Focus</span><strong id="explore-focus">ISS orbit</strong></div>
+        <div class="explore-stat"><span>Clock</span><strong id="explore-clock">--:-- UTC</strong></div>
+        <div class="explore-stat"><span>Season</span><strong id="explore-season">--</strong></div>
+      </div>
+      <div class="explore-content">
+        <div class="explore-view active" id="explore-tab-tours">
+          <div class="tour-grid" id="tour-grid"></div>
+          <div class="mission-note" id="mission-note">Pick a tour to reframe the scene, switch layers, and surface the useful instruments for that destination.</div>
+        </div>
+        <div class="explore-view" id="explore-tab-events">
+          <div class="event-list" id="event-list"></div>
+        </div>
+        <div class="explore-view" id="explore-tab-catalog">
+          <input class="catalog-search" id="catalog-search" type="search" placeholder="Search planets, spacecraft, constellations">
+          <div class="catalog-list" id="catalog-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="orrery-readout" id="orrery-readout">
+      <strong id="orrery-title">Solar survey</strong>
+      <span id="orrery-copy">A compact, scaled layout for comparing planets and mission destinations.</span>
+      <button class="small-action" id="orrery-action">Open catalog</button>
+    </div>
+
+    <div class="data-panel">
+      <div class="data-grid">
+        <div class="data-item">
+          <div class="label">Status</div>
+          <div class="value" id="status-txt" style="color:#86efac;">ACQUIRING...</div>
+        </div>
+        <div class="data-item">
+          <div class="label">Lat</div>
+          <div class="value" id="iss-lat">--.----°</div>
+        </div>
+        <div class="data-item">
+          <div class="label">Lon</div>
+          <div class="value" id="iss-lon">--.----°</div>
+        </div>
+        <div class="data-item">
+          <div class="label">Over</div>
+          <div class="value" id="iss-over" style="color:#86efac;">--</div>
+        </div>
+        <div class="data-item">
+          <div class="label">Altitude</div>
+          <div class="value" id="iss-alt">~420 km</div>
+        </div>
+        <div class="data-item">
+          <div class="label">Speed</div>
+          <div class="value" id="iss-speed">-- km/h</div>
+        </div>
+      </div>
+      <div class="crew-badge" id="crew-badge">👨‍🚀 Loading crew...</div>
+      <div class="refresh-bar">
+        <div class="refresh-bar-fill" id="refresh-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <div id="entity-detail-panel" class="entity-detail-panel hidden">
+    <button id="close-detail" class="close-detail">×</button>
+    <div class="ed-header">
+      <div class="ed-icon" id="ed-icon">🛰️</div>
+      <div class="ed-name" id="ed-name">Satellite Name</div>
+    </div>
+    <div class="ed-grid">
+      <div class="ed-item"><span class="ed-label">Altitude</span><span class="ed-val" id="ed-alt">--</span></div>
+      <div class="ed-item"><span class="ed-label">Speed</span><span class="ed-val" id="ed-speed">--</span></div>
+      <div class="ed-item" id="ed-track-container"><span class="ed-label">Heading</span><span class="ed-val"
+          id="ed-track">--</span></div>
+      <div class="ed-item"><span class="ed-label">Type</span><span class="ed-val" id="ed-type">--</span></div>
+    </div>
+  </div>
+
+  <script src="moon-texture.js?v=3"></script>
+  <script src="mars-texture.js?v=3"></script>
+  <script src="app.js?v=4"></script>
+  <script src="earth.js?v=3"></script>
+  <script src="earth-views.js?v=4"></script>
+  <script src="moon-tools.js?v=4"></script>
+  <script src="satellites.js?v=4"></script>
+  <script src="tracking.js?v=4"></script>
+  <script src="exploration.js?v=2"></script>
+</body>
+
+</html>
