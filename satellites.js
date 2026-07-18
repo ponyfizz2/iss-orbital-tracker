@@ -91,6 +91,11 @@ const CONSTELLATIONS = {
 const satData = {};
 const SAT_TLE_CACHE_PREFIX = 'sat_tle_v2_';
 const SAT_TLE_TTL = 6 * 60 * 60 * 1000;
+const SAT_MARKER_SCALE_KEY = 'sat_marker_scale_v1';
+const DEFAULT_SAT_MARKER_SCALE = 1.75;
+const MIN_SAT_MARKER_SCALE = 1;
+const MAX_SAT_MARKER_SCALE = 3;
+let satMarkerScale = DEFAULT_SAT_MARKER_SCALE;
 
 // CORS proxy URLs
 const CORS_PROXIES = [
@@ -347,8 +352,17 @@ function getIconTexture(type) {
     canvas.width = size; canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = "white";
     ctx.translate(size / 2, size / 2);
+
+    // The halo keeps markers legible over both bright cloud cover and the
+    // dark side of the globe without changing their orbital positions.
+    const glow = ctx.createRadialGradient(0, 0, 3, 0, 0, 30);
+    glow.addColorStop(0, 'rgba(255,255,255,0.7)');
+    glow.addColorStop(0.45, 'rgba(255,255,255,0.3)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-32, -32, 64, 64);
+    ctx.fillStyle = "white";
 
     if (type === 'plane') {
         ctx.beginPath();
@@ -419,11 +433,13 @@ function createConstellationMarkers(key) {
     const isVisible = config.enabled && (activeBody === targetBody);
 
     if (isPlane) {
-        const planeGeo = new THREE.PlaneGeometry(0.25, 0.25);
+        const planeSize = 0.28 * satMarkerScale;
+        const planeGeo = new THREE.PlaneGeometry(planeSize, planeSize);
         const planeMat = new THREE.MeshBasicMaterial({
-            map: tex, color: config.color, transparent: true, opacity: 0.9, depthTest: true, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.1
+            map: tex, color: config.color, transparent: true, opacity: 1, depthTest: true, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.05
         });
         data.mesh = new THREE.InstancedMesh(planeGeo, planeMat, count);
+        data.mesh.userData.markerBaseSize = 0.28;
         data.mesh.renderOrder = 6;
         data.mesh.visible = isVisible;
         earthGroup.add(data.mesh);
@@ -440,12 +456,13 @@ function createConstellationMarkers(key) {
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const mat = new THREE.PointsMaterial({
-            size: isSingle ? 0.35 : 0.16,
-            map: tex, vertexColors: true, transparent: true, opacity: isSingle ? 1.0 : 0.85,
-            alphaTest: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, sizeAttenuation: true
+            size: (isSingle ? 0.4 : 0.18) * satMarkerScale,
+            map: tex, vertexColors: true, transparent: true, opacity: 1,
+            alphaTest: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, sizeAttenuation: true
         });
 
         data.points = new THREE.Points(geo, mat);
+        data.points.userData.markerBaseSize = isSingle ? 0.4 : 0.18;
         data.points.renderOrder = 6;
         data.points.visible = isVisible;
         earthGroup.add(data.points);
@@ -656,6 +673,7 @@ function updateSatCountDisplay() {
 
 /* ====== INIT ====== */
 function initSatelliteToggles() {
+    initSatelliteMarkerScale();
     document.querySelectorAll('input[data-sat]').forEach(cb => {
         cb.addEventListener('change', (e) => {
             toggleConstellation(e.target.dataset.sat, e.target.checked);
@@ -664,10 +682,55 @@ function initSatelliteToggles() {
     initSatelliteInteractions();
 }
 
+function clampSatelliteMarkerScale(value) {
+    return Math.min(MAX_SAT_MARKER_SCALE, Math.max(MIN_SAT_MARKER_SCALE, value));
+}
+
+function setSatelliteMarkerScale(value, persist = true) {
+    const parsed = Number(value);
+    satMarkerScale = clampSatelliteMarkerScale(Number.isFinite(parsed) ? parsed : DEFAULT_SAT_MARKER_SCALE);
+
+    const input = document.getElementById('sat-marker-scale');
+    const output = document.getElementById('val-sat-marker-scale');
+    if (input) input.value = satMarkerScale.toFixed(2);
+    if (output) output.textContent = `${satMarkerScale.toFixed(2)}x`;
+
+    Object.values(satData).forEach(data => {
+        if (data.points?.material && data.points.userData.markerBaseSize) {
+            data.points.material.size = data.points.userData.markerBaseSize * satMarkerScale;
+            data.points.material.needsUpdate = true;
+        }
+        if (data.mesh?.geometry && data.mesh.userData.markerBaseSize) {
+            const size = data.mesh.userData.markerBaseSize * satMarkerScale;
+            data.mesh.geometry.dispose();
+            data.mesh.geometry = new THREE.PlaneGeometry(size, size);
+        }
+    });
+
+    satRaycaster.params.Points.threshold = 0.16 * satMarkerScale;
+    if (persist) {
+        try { localStorage.setItem(SAT_MARKER_SCALE_KEY, String(satMarkerScale)); } catch { }
+    }
+}
+
+function initSatelliteMarkerScale() {
+    const input = document.getElementById('sat-marker-scale');
+    if (!input) return;
+
+    let initialScale = DEFAULT_SAT_MARKER_SCALE;
+    try {
+        const savedScale = Number(localStorage.getItem(SAT_MARKER_SCALE_KEY));
+        if (Number.isFinite(savedScale) && savedScale > 0) initialScale = savedScale;
+    } catch { }
+
+    setSatelliteMarkerScale(initialScale, false);
+    input.addEventListener('input', event => setSatelliteMarkerScale(event.target.value));
+}
+
 /* ====== INTERACTION ====== */
 let selectedSatVisuals = new THREE.Group();
 const satRaycaster = new THREE.Raycaster();
-satRaycaster.params.Points.threshold = 0.15; // easier to click points
+satRaycaster.params.Points.threshold = 0.16 * satMarkerScale;
 const satMouse = new THREE.Vector2();
 
 function initSatelliteInteractions() {

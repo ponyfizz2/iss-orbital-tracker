@@ -416,6 +416,15 @@
       letter-spacing: 1px;
     }
 
+    .sat-marker-size {
+      margin: 8px 0 7px;
+    }
+
+    .sat-marker-size label {
+      font-size: 0.55rem;
+      letter-spacing: 0.5px;
+    }
+
     .sat-toggle {
       display: flex;
       align-items: center;
@@ -954,6 +963,11 @@
       </div>
       <div class="sat-toggles">
         <div class="section-label">SATELLITES <span class="sat-count" id="sat-count"></span></div>
+        <div class="control-group sat-marker-size">
+          <label for="sat-marker-scale">Marker Size <span id="val-sat-marker-scale">1.75x</span></label>
+          <input type="range" id="sat-marker-scale" min="1" max="3" step="0.25" value="1.75"
+            aria-label="Satellite and aircraft marker size">
+        </div>
         <label class="sat-toggle"><input type="checkbox" data-sat="tiangong"> <span class="sat-dot"
             style="background:#ef4444"></span> Tiangong (CSS)</label>
         <label class="sat-toggle"><input type="checkbox" data-sat="hubble"> <span class="sat-dot"
@@ -1074,7 +1088,7 @@
           'app.js?v=7',
           'earth.js?v=7',
           'earth-views.js?v=7',
-          'satellites.js?v=7',
+          'satellites.js?v=8',
           'tracking.js?v=7'
         ],
         ['moon-tools.js?v=7', 'exploration.js?v=7']
