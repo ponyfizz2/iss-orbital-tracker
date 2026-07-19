@@ -69,6 +69,11 @@ function initMoonTools() {
     inspector.innerHTML = `
         <header class="surface-inspector-header">
             <div><strong id="surface-inspector-title">Surface inspector</strong><span id="surface-inspector-detail"></span></div>
+            <div class="surface-inspector-zoom" aria-label="Surface detail zoom">
+                <button class="mt-btn" id="surface-inspector-zoom-out" type="button" aria-label="Zoom out">−</button>
+                <output id="surface-inspector-zoom-level">Overview</output>
+                <button class="mt-btn" id="surface-inspector-zoom-in" type="button" aria-label="Load higher-resolution imagery">+</button>
+            </div>
             <button class="mt-btn" id="surface-inspector-reset">Reset view</button>
             <button class="mt-btn" id="surface-inspector-close" aria-label="Close surface inspector">×</button>
         </header>
@@ -190,6 +195,9 @@ function initMoonTools() {
         .surface-inspector-header div { display: grid; gap: 2px; margin-right: auto; }
         .surface-inspector-header strong { color: #e0f2fe; font-size: .82rem; }
         .surface-inspector-header span { color: #94a3b8; font: .58rem 'JetBrains Mono', monospace; }
+        .surface-inspector-header .surface-inspector-zoom { display: flex; align-items: center; gap: 5px; margin-right: 0; }
+        .surface-inspector-zoom .mt-btn { min-width: 32px; padding: 6px 10px; font-size: 1rem; line-height: 1; }
+        .surface-inspector-zoom output { min-width: 78px; color: #bae6fd; text-align: center; font: .62rem 'JetBrains Mono', monospace; }
         .surface-inspector-stage {
             min-height: 0;
             overflow: hidden;
@@ -290,6 +298,8 @@ function initMoonTools() {
     });
     document.getElementById('surface-inspector-close')?.addEventListener('click', closeSurfaceInspector);
     document.getElementById('surface-inspector-reset')?.addEventListener('click', resetSurfaceInspector);
+    document.getElementById('surface-inspector-zoom-in')?.addEventListener('click', () => changeSurfaceInspectorZoom(1));
+    document.getElementById('surface-inspector-zoom-out')?.addEventListener('click', () => changeSurfaceInspectorZoom(-1));
     initSurfaceInspectorGestures();
 
     // Pointer events on canvas
@@ -324,6 +334,22 @@ function resetSurfaceInspector() {
     surfaceInspectorState.x = 0;
     surfaceInspectorState.y = 0;
     refreshSurfaceInspectorImage();
+}
+
+function changeSurfaceInspectorZoom(delta) {
+    const next = Math.max(1, Math.min(8, surfaceInspectorState.zoom + delta));
+    if (next === surfaceInspectorState.zoom) return;
+    surfaceInspectorState.zoom = next;
+    refreshSurfaceInspectorImage();
+}
+
+function updateSurfaceInspectorZoomLabel() {
+    const label = document.getElementById('surface-inspector-zoom-level');
+    if (label) label.textContent = surfaceInspectorState.zoom === 1 ? 'Overview' : `${surfaceInspectorState.zoom}× detail`;
+    const out = document.getElementById('surface-inspector-zoom-out');
+    const plus = document.getElementById('surface-inspector-zoom-in');
+    if (out) out.disabled = surfaceInspectorState.zoom <= 1;
+    if (plus) plus.disabled = surfaceInspectorState.zoom >= 8;
 }
 
 function applySurfaceInspectorTransform() {
@@ -370,6 +396,7 @@ function refreshSurfaceInspectorImage() {
     const image = document.getElementById('surface-inspector-image');
     const detail = document.getElementById('surface-inspector-detail');
     if (!source || !image || !detail) return;
+    updateSurfaceInspectorZoomLabel();
     surfaceInspectorState.x = 0;
     surfaceInspectorState.y = 0;
     applySurfaceInspectorTransform();
@@ -399,12 +426,7 @@ function initSurfaceInspectorGestures() {
     stage.addEventListener('wheel', (event) => {
         event.preventDefault();
         const delta = event.deltaY > 0 ? -1 : 1;
-        surfaceInspectorState.zoom = Math.max(1, Math.min(8, surfaceInspectorState.zoom + delta));
-        if (surfaceInspectorState.zoom === 1) {
-            surfaceInspectorState.x = 0;
-            surfaceInspectorState.y = 0;
-        }
-        refreshSurfaceInspectorImage();
+        changeSurfaceInspectorZoom(delta);
     }, { passive: false });
     stage.addEventListener('pointerdown', (event) => {
         if (surfaceInspectorState.zoom <= 1) return;
