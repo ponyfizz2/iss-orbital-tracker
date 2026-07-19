@@ -65,10 +65,11 @@ const PLANET_VIEW_CONFIG = {
 };
 
 const MARS_LAYER_META = {
-    natural: { label: 'NATURAL COLOUR MAP · 4096×2048 · LOADED', sourceUrl: '' },
+    natural: { label: 'NATURAL COLOUR BASEMAP · LOADED', sourceUrl: '' },
     elevation: { label: 'NASA/USGS MOLA ELEVATION · 4096×2048 · LOADED', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mars_mgs_mola_global_shaded_relief_463m' },
     thermal: { label: 'MARS ODYSSEY THEMIS DAY IR · 2048×1024 · LOADED', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mars_odyssey_themis_ir_day_global_mosaic_100m_v12' },
     orbital: { label: 'MGS MOC ORBITAL MOSAIC · 2048×1024 · LOADED', sourceUrl: 'https://www.mars.asu.edu/data/' },
+    terraform: { label: 'TERRAFORM LAB · MOLA 4096×2048 · VISUAL SIMULATION', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mars_mgs_mola_global_shaded_relief_463m' },
 };
 
 let planetViewGroups = {};
@@ -148,7 +149,10 @@ function loadSurfaceTexture(key) {
     if (!url) return Promise.reject(new Error(`Unknown surface texture: ${key}`));
     surfaceTexturePromises[key] = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, (texture) => {
-            texture.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+            // Preserve as much detail as the visitor's GPU supports. The old
+            // fixed cap of 8 made the 4K maps look very similar to their 1K
+            // fallbacks when viewed at a shallow angle.
+            texture.anisotropy = Math.min(16, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
             if (typeof THREE.sRGBEncoding !== 'undefined') texture.encoding = THREE.sRGBEncoding;
             texture.minFilter = THREE.LinearMipmapLinearFilter;
             texture.magFilter = THREE.LinearFilter;
@@ -573,7 +577,9 @@ var moonSphere = null;
 function createMoonView() {
     if (moonSphere) return;
 
-    const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
+    // A denser mesh keeps small craters and coastline edges from looking
+    // faceted when a 4K map is inspected close to the surface.
+    const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 192, 128);
     const mat = new THREE.MeshPhongMaterial({
         map: getMoonLayerTexture(moonSurfaceLayer),
         bumpMap: texCache.moon || null,
@@ -870,11 +876,50 @@ window.updatePlanetViewReadout = updatePlanetViewReadout;
 
 /* ====== MARS MODE ====== */
 let marsSphere = null;
+let marsTerrainShader = null;
+let marsWaterLevel = 0;
+let marsTerraformEnabled = false;
+
+function installMarsTerraformShader(material) {
+    material.onBeforeCompile = (shader) => {
+        shader.uniforms.uTerraform = { value: marsTerraformEnabled ? 1 : 0 };
+        shader.uniforms.uSeaLevel = { value: marsWaterLevel };
+        shader.fragmentShader = shader.fragmentShader
+            .replace('void main() {', 'uniform float uTerraform;\nuniform float uSeaLevel;\nvoid main() {')
+            .replace('#include <map_fragment>', `#include <map_fragment>
+                if (uTerraform > 0.5) {
+                    // The MOLA global relief map drives a deliberately
+                    // speculative, Earth-like terrain palette. It is a visual
+                    // scenario tool, not a reconstruction of past Mars.
+                    float elevation = clamp(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+                    float waterline = clamp(0.47 + uSeaLevel * 0.004, 0.12, 0.82);
+                    float water = 1.0 - smoothstep(waterline - 0.018, waterline + 0.014, elevation);
+                    vec3 deepOcean = vec3(0.012, 0.10, 0.19);
+                    vec3 shelfOcean = vec3(0.035, 0.34, 0.48);
+                    vec3 ocean = mix(deepOcean, shelfOcean, smoothstep(waterline - 0.30, waterline, elevation));
+                    vec3 desert = mix(vec3(0.37, 0.20, 0.07), vec3(0.80, 0.56, 0.25), elevation);
+                    float fertile = smoothstep(waterline, waterline + 0.15, elevation) * (1.0 - smoothstep(0.70, 0.90, elevation));
+                    vec3 land = mix(desert, vec3(0.08, 0.34, 0.12), fertile);
+                    float snow = smoothstep(0.74, 0.93, elevation);
+                    land = mix(land, vec3(0.92, 0.96, 0.98), snow);
+                    diffuseColor.rgb = mix(land, ocean, water);
+                }`);
+        marsTerrainShader = shader;
+    };
+    material.customProgramCacheKey = () => 'mars-terraform-v1';
+}
+
+function setMarsWaterLevel(level) {
+    marsWaterLevel = Math.max(-35, Math.min(45, Number(level) || 0));
+    if (marsTerrainShader) marsTerrainShader.uniforms.uSeaLevel.value = marsWaterLevel;
+}
+
+window.setMarsWaterLevel = setMarsWaterLevel;
 
 function createMarsView() {
     if (marsSphere) return;
 
-    const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
+    const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 192, 128);
     const mat = new THREE.MeshPhongMaterial({
         map: getMarsLayerTexture(marsSurfaceLayer),
         bumpMap: texCache.mars || null,
@@ -882,6 +927,7 @@ function createMarsView() {
         specular: new THREE.Color(0x221111),
         shininess: 5,
     });
+    installMarsTerraformShader(mat);
 
     marsSphere = new THREE.Mesh(geo, mat);
     marsSphere.renderOrder = 0;
@@ -890,16 +936,17 @@ function createMarsView() {
 }
 
 async function setMarsSurfaceLayer(layer) {
-    if (!['natural', 'elevation', 'thermal', 'orbital'].includes(layer)) return;
+    if (!['natural', 'elevation', 'thermal', 'orbital', 'terraform'].includes(layer)) return;
     marsSurfaceLayer = layer;
     if (!marsSphere) createMarsView();
     if (!marsSphere) return;
-    const textureKey = layer === 'elevation' ? 'marsElevation' : layer === 'thermal' ? 'marsThermal' : layer === 'orbital' ? 'marsOrbital' : null;
+    const textureKey = layer === 'elevation' || layer === 'terraform' ? 'marsElevation' : layer === 'thermal' ? 'marsThermal' : layer === 'orbital' ? 'marsOrbital' : null;
     const sourceLabels = {
         natural: 'NATURAL COLOUR · 4096×2048',
         elevation: 'NASA/USGS MOLA · 4096×2048',
         thermal: 'MARS ODYSSEY THEMIS · 2048×1024',
         orbital: 'MGS MOC · 2048×1024',
+        terraform: 'TERRAFORM LAB · MOLA 4096×2048 · VISUAL SIMULATION',
     };
     let layerAvailable = true;
     if (textureKey && !texCache[textureKey]) {
@@ -914,11 +961,15 @@ async function setMarsSurfaceLayer(layer) {
         }
     }
     if (marsSurfaceLayer !== layer) return;
-    marsSphere.material.map = getMarsLayerTexture(layer);
-    marsSphere.material.bumpMap = layer === 'elevation'
+    marsTerraformEnabled = layer === 'terraform';
+    marsSphere.material.map = layer === 'terraform'
+        ? (texCache.marsElevation || texCache.mars || marsSphere.material.map)
+        : getMarsLayerTexture(layer);
+    marsSphere.material.bumpMap = layer === 'elevation' || layer === 'terraform'
         ? (texCache.marsElevation || texCache.mars || marsSphere.material.bumpMap)
         : (texCache.mars || marsSphere.material.bumpMap);
-    marsSphere.material.bumpScale = layer === 'elevation' ? 0.07 : 0.03;
+    marsSphere.material.bumpScale = layer === 'elevation' || layer === 'terraform' ? 0.07 : 0.03;
+    if (marsTerrainShader) marsTerrainShader.uniforms.uTerraform.value = marsTerraformEnabled ? 1 : 0;
     marsSphere.material.color.setHex(0xffffff);
     marsSphere.material.needsUpdate = true;
     setLayerSourceText('mars-layer-source', `${sourceLabels[layer]} · ${layerAvailable ? 'LOADED' : 'FALLBACK'}`, layerAvailable ? 'loaded' : 'error');

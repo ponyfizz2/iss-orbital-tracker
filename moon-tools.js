@@ -38,11 +38,13 @@ function initMoonTools() {
     marsToolbar.className = 'moon-toolbar surface-toolbar hidden';
     marsToolbar.innerHTML = `
         <div class="mt-label">MARS LAYERS</div>
-        <button class="mt-btn surface-layer-btn active" data-mars-layer="natural">Natural 4K</button>
+        <button class="mt-btn surface-layer-btn active" data-mars-layer="natural">Natural</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="elevation">Elevation</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="thermal">Thermal IR</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="orbital">Orbital</button>
-        <span class="moon-source" id="mars-layer-source">NATURAL COLOUR · 4096×2048 · LOADED</span>
+        <button class="mt-btn surface-layer-btn" data-mars-layer="terraform" title="A visual terraforming simulation using the MOLA elevation map">Water Lab</button>
+        <label class="mars-water-control" for="mars-water-level">Sea level <input id="mars-water-level" type="range" min="-35" max="45" value="0" step="1"><output id="mars-water-readout">0 m</output></label>
+        <span class="moon-source" id="mars-layer-source">NATURAL COLOUR BASEMAP · LOADED</span>
         <a class="mt-btn surface-external" href="https://murray-lab.caltech.edu/CTX/V01/SceneView/" target="_blank" rel="noopener" title="Open the official 5 m/pixel CTX mosaic">CTX 5m ↗</a>
     `;
     document.body.appendChild(marsToolbar);
@@ -114,6 +116,17 @@ function initMoonTools() {
         }
         .mt-btn:hover { background: rgba(255,255,255,0.1); }
         .surface-external { text-decoration: none; white-space: nowrap; }
+        .mars-water-control {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            color: #bbf7d0;
+            font: 0.58rem 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+        .mars-water-control.visible { display: flex; }
+        .mars-water-control input { width: 104px; accent-color: #38bdf8; }
+        .mars-water-control output { min-width: 38px; color: #e0f2fe; }
         .orrery-readout.surface-toolbar-open,
         .data-panel.surface-toolbar-open { bottom: 210px; }
         .mt-btn.active {
@@ -163,16 +176,18 @@ function initMoonTools() {
     });
 
     const marsSources = {
-        natural: 'NATURAL COLOUR · 4096×2048',
+        natural: 'NATURAL COLOUR BASEMAP',
         elevation: 'NASA/USGS MOLA · 4096×2048',
         thermal: 'MARS ODYSSEY THEMIS · 2048×1024',
         orbital: 'MGS MOC · 2048×1024',
+        terraform: 'TERRAFORM LAB · MOLA 4096×2048 · VISUAL SIMULATION',
     };
     document.querySelectorAll('[data-mars-layer]').forEach((button) => {
         button.addEventListener('click', async (event) => {
             const selectedButton = event.currentTarget;
             const layer = selectedButton.dataset.marsLayer;
             document.querySelectorAll('[data-mars-layer]').forEach((item) => item.classList.toggle('active', item === selectedButton));
+            document.querySelector('.mars-water-control')?.classList.toggle('visible', layer === 'terraform');
             selectedButton.classList.add('loading');
             const source = document.getElementById('mars-layer-source');
             if (source) source.textContent = `${marsSources[layer]} · LOADING`;
@@ -182,6 +197,12 @@ function initMoonTools() {
                 if (source && source.dataset.state !== 'error') source.textContent = `${marsSources[layer]} · LOADED`;
             }
         });
+    });
+    document.getElementById('mars-water-level')?.addEventListener('input', (event) => {
+        const level = Number(event.currentTarget.value);
+        const output = document.getElementById('mars-water-readout');
+        if (output) output.textContent = `${level > 0 ? '+' : ''}${level} m`;
+        window.setMarsWaterLevel?.(level);
     });
 
     // Pointer events on canvas

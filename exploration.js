@@ -132,6 +132,9 @@ let explorationReady = false;
 let lastExplorationMode = 'dots';
 let liveSunFilter = 'HMIIC';
 let liveSunRefreshTimer = null;
+let liveSunZoom = 1;
+let liveSunPan = { x: 0, y: 0 };
+let liveSunDrag = null;
 
 const LIVE_SUN_FILTERS = {
   HMIIC: { title: 'HMI Continuum', description: 'Visible photosphere and sunspots', file: 'HMIIC' },
@@ -372,6 +375,48 @@ function initLiveSunPanel() {
   document.querySelectorAll('[data-sun-filter]').forEach((button) => {
     button.addEventListener('click', () => selectLiveSunFilter(button.dataset.sunFilter));
   });
+  const stage = document.querySelector('.live-sun-stage');
+  if (!stage) return;
+  stage.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    liveSunZoom = Math.max(1, Math.min(6, liveSunZoom + direction * 0.35));
+    if (liveSunZoom === 1) liveSunPan = { x: 0, y: 0 };
+    updateLiveSunTransform();
+  }, { passive: false });
+  stage.addEventListener('pointerdown', (event) => {
+    if (liveSunZoom <= 1) return;
+    stage.setPointerCapture?.(event.pointerId);
+    liveSunDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: liveSunPan.x, panY: liveSunPan.y };
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', (event) => {
+    if (!liveSunDrag || event.pointerId !== liveSunDrag.pointerId) return;
+    liveSunPan = {
+      x: liveSunDrag.panX + event.clientX - liveSunDrag.x,
+      y: liveSunDrag.panY + event.clientY - liveSunDrag.y,
+    };
+    updateLiveSunTransform();
+  });
+  const finishDrag = (event) => {
+    if (liveSunDrag && event.pointerId === liveSunDrag.pointerId) liveSunDrag = null;
+    stage.classList.remove('dragging');
+  };
+  stage.addEventListener('pointerup', finishDrag);
+  stage.addEventListener('pointercancel', finishDrag);
+  document.getElementById('live-sun-reset')?.addEventListener('click', resetLiveSunZoom);
+}
+
+function resetLiveSunZoom() {
+  liveSunZoom = 1;
+  liveSunPan = { x: 0, y: 0 };
+  updateLiveSunTransform();
+}
+
+function updateLiveSunTransform() {
+  const image = document.getElementById('live-sun-image');
+  if (!image) return;
+  image.style.transform = `translate(${liveSunPan.x}px, ${liveSunPan.y}px) scale(${liveSunZoom})`;
 }
 
 function setLiveSunVisible(visible) {
@@ -395,6 +440,7 @@ function selectLiveSunFilter(filter) {
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
+  resetLiveSunZoom();
   refreshLiveSunImage(true);
 }
 
