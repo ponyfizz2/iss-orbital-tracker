@@ -11,6 +11,17 @@ const TEX_URLS = {
     moonGeology: 'assets/moon-geology-usgs.jpg?v=1',
 };
 
+// Scientific surface layers are intentionally excluded from the general
+// preload. They are several times larger than the base maps and are fetched
+// only when the user selects a layer.
+const SURFACE_TEX_URLS = {
+    moonNaturalHd: 'assets/moon-natural-lroc-4k.jpg?v=1',
+    moonTopography: 'assets/moon-topography-gld100.jpg?v=2',
+    marsElevation: 'assets/mars-elevation-mola-4k.jpg?v=1',
+    marsThermal: 'assets/mars-thermal-themis-2k.jpg?v=1',
+    marsOrbital: 'assets/mars-orbital-moc-2k.jpg?v=1',
+};
+
 // Cached textures
 const texCache = {};
 let texturesLoading = false;
@@ -22,7 +33,9 @@ let satCloudSphere = null;
 let satAtmoSphere = null;
 let satNightMaterial = null;
 let satDayMaterial = null;
-let moonGeologyEnabled = true;
+let moonSurfaceLayer = 'geology';
+let marsSurfaceLayer = 'natural';
+const surfaceTexturePromises = {};
 
 // Hologram mode objects
 let holoGroup = null;
@@ -68,7 +81,7 @@ function registerEmbeddedTextures() {
             moonTex.anisotropy = 4;
             texCache.moon = moonTex;
             if (moonSphere) {
-                moonSphere.material.map = (moonGeologyEnabled ? texCache.moonGeology : null) || moonTex;
+                moonSphere.material.map = getMoonLayerTexture(moonSurfaceLayer) || moonTex;
                 moonSphere.material.bumpMap = moonTex;
                 moonSphere.material.needsUpdate = true;
             }
@@ -81,7 +94,7 @@ function registerEmbeddedTextures() {
             marsTex.anisotropy = 4;
             texCache.mars = marsTex;
             if (marsSphere) {
-                marsSphere.material.map = marsTex;
+                if (marsSurfaceLayer === 'natural') marsSphere.material.map = marsTex;
                 marsSphere.material.bumpMap = marsTex;
                 marsSphere.material.needsUpdate = true;
             }
@@ -105,7 +118,7 @@ function preloadTextures() {
         loader.load(TEX_URLS[key], (tex) => {
             tex.anisotropy = 4;
             texCache[key] = tex;
-            if (key === 'moonGeology' && moonSphere && moonGeologyEnabled) {
+            if (key === 'moonGeology' && moonSphere && moonSurfaceLayer === 'geology') {
                 moonSphere.material.map = tex;
                 moonSphere.material.needsUpdate = true;
             }
@@ -113,6 +126,37 @@ function preloadTextures() {
             if (loaded === keys.length) { texturesLoaded = true; texturesLoading = false; }
         }, undefined, () => { loaded++; if (loaded === keys.length) { texturesLoaded = true; texturesLoading = false; } });
     });
+}
+
+function loadSurfaceTexture(key) {
+    if (texCache[key]) return Promise.resolve(texCache[key]);
+    if (surfaceTexturePromises[key]) return surfaceTexturePromises[key];
+    const url = SURFACE_TEX_URLS[key];
+    if (!url) return Promise.reject(new Error(`Unknown surface texture: ${key}`));
+    surfaceTexturePromises[key] = new Promise((resolve, reject) => {
+        new THREE.TextureLoader().load(url, (texture) => {
+            texture.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+            texCache[key] = texture;
+            resolve(texture);
+        }, undefined, reject);
+    }).catch((error) => {
+        delete surfaceTexturePromises[key];
+        throw error;
+    });
+    return surfaceTexturePromises[key];
+}
+
+function getMoonLayerTexture(layer) {
+    if (layer === 'natural') return texCache.moonNaturalHd || texCache.moon || null;
+    if (layer === 'topography') return texCache.moonTopography || null;
+    return texCache.moonGeology || texCache.moon || null;
+}
+
+function getMarsLayerTexture(layer) {
+    if (layer === 'elevation') return texCache.marsElevation || null;
+    if (layer === 'thermal') return texCache.marsThermal || null;
+    if (layer === 'orbital') return texCache.marsOrbital || null;
+    return texCache.mars || null;
 }
 
 /* ====== SATELLITE MODE ====== */
@@ -506,7 +550,7 @@ function createMoonView() {
 
     const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
     const mat = new THREE.MeshPhongMaterial({
-        map: (moonGeologyEnabled ? texCache.moonGeology : null) || texCache.moon || null,
+        map: getMoonLayerTexture(moonSurfaceLayer),
         bumpMap: texCache.moon || null,
         bumpScale: 0.045,
         specular: new THREE.Color(0x202020),
@@ -519,15 +563,30 @@ function createMoonView() {
     earthGroup.add(moonSphere);
 }
 
-function setMoonGeologyEnabled(enabled) {
-    moonGeologyEnabled = Boolean(enabled);
+async function setMoonSurfaceLayer(layer) {
+    if (!['natural', 'topography', 'geology'].includes(layer)) return;
+    moonSurfaceLayer = layer;
     if (!moonSphere) createMoonView();
     if (!moonSphere) return;
-    moonSphere.material.map = (moonGeologyEnabled ? texCache.moonGeology : null) || texCache.moon || null;
-    moonSphere.material.bumpMap = texCache.moon || moonSphere.material.bumpMap;
+
+    const textureKey = layer === 'natural' ? 'moonNaturalHd' : layer === 'topography' ? 'moonTopography' : null;
+    if (textureKey && !texCache[textureKey]) {
+        moonSphere.material.map = getMoonLayerTexture(layer) || texCache.moon || texCache.moonGeology || null;
+        moonSphere.material.needsUpdate = true;
+        try { await loadSurfaceTexture(textureKey); } catch (error) { console.warn(`Moon ${layer} layer unavailable.`, error); }
+    }
+    if (moonSurfaceLayer !== layer) return;
+    moonSphere.material.map = getMoonLayerTexture(layer);
+    moonSphere.material.bumpMap = texCache.moonNaturalHd || texCache.moon || moonSphere.material.bumpMap;
+    moonSphere.material.bumpScale = layer === 'topography' ? 0.065 : 0.045;
     moonSphere.material.needsUpdate = true;
 }
 
+function setMoonGeologyEnabled(enabled) {
+    return setMoonSurfaceLayer(enabled ? 'geology' : 'natural');
+}
+
+window.setMoonSurfaceLayer = setMoonSurfaceLayer;
 window.setMoonGeologyEnabled = setMoonGeologyEnabled;
 
 /* ====== DEDICATED PLANET GLOBES ====== */
@@ -738,7 +797,7 @@ function createMarsView() {
 
     const geo = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
     const mat = new THREE.MeshPhongMaterial({
-        map: texCache.mars || null,
+        map: getMarsLayerTexture(marsSurfaceLayer),
         bumpMap: texCache.mars || null,
         bumpScale: 0.03,
         specular: new THREE.Color(0x221111),
@@ -750,6 +809,33 @@ function createMarsView() {
     marsSphere.visible = false;
     earthGroup.add(marsSphere);
 }
+
+async function setMarsSurfaceLayer(layer) {
+    if (!['natural', 'elevation', 'thermal', 'orbital'].includes(layer)) return;
+    marsSurfaceLayer = layer;
+    if (!marsSphere) createMarsView();
+    if (!marsSphere) return;
+    const textureKey = layer === 'elevation' ? 'marsElevation' : layer === 'thermal' ? 'marsThermal' : layer === 'orbital' ? 'marsOrbital' : null;
+    if (textureKey && !texCache[textureKey]) {
+        marsSphere.material.map = texCache.mars || marsSphere.material.map;
+        marsSphere.material.needsUpdate = true;
+        try { await loadSurfaceTexture(textureKey); } catch (error) { console.warn(`Mars ${layer} layer unavailable.`, error); }
+    }
+    if (marsSurfaceLayer !== layer) return;
+    marsSphere.material.map = getMarsLayerTexture(layer);
+    marsSphere.material.bumpMap = layer === 'elevation'
+        ? (texCache.marsElevation || texCache.mars || marsSphere.material.bumpMap)
+        : (texCache.mars || marsSphere.material.bumpMap);
+    marsSphere.material.bumpScale = layer === 'elevation' ? 0.07 : 0.03;
+    marsSphere.material.color.setHex(0xffffff);
+    marsSphere.material.needsUpdate = true;
+    const live = document.getElementById('orrery-live');
+    if (live && currentViewMode === 'mars') {
+        live.textContent = `DEDICATED PLANET GLOBE · 25.2° AXIAL TILT · ${layer.toUpperCase()} SURFACE LAYER`;
+    }
+}
+
+window.setMarsSurfaceLayer = setMarsSurfaceLayer;
 
 /* ====== VIEW MODE SWITCHING ====== */
 function setViewMode(mode) {
