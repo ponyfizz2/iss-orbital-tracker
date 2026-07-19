@@ -20,6 +20,12 @@ const SURFACE_TEX_URLS = {
     marsElevation: 'assets/mars-elevation-mola-4k.jpg?v=1',
     marsThermal: 'assets/mars-thermal-themis-2k.jpg?v=1',
     marsOrbital: 'assets/mars-orbital-moc-2k.jpg?v=1',
+    mercuryObserved: 'assets/planet-mercury-messenger.jpg?v=1',
+    venusObserved: 'assets/planet-venus-magellan.jpg?v=1',
+    jupiterObserved: 'assets/planet-jupiter-hubble-opal.jpg?v=1',
+    saturnObserved: 'assets/planet-saturn-observational-4k.jpg?v=1',
+    uranusObserved: 'assets/planet-uranus-observational-2k.jpg?v=1',
+    neptuneObserved: 'assets/planet-neptune-observational-2k.jpg?v=1',
 };
 
 // Cached textures
@@ -33,7 +39,7 @@ let satCloudSphere = null;
 let satAtmoSphere = null;
 let satNightMaterial = null;
 let satDayMaterial = null;
-let moonSurfaceLayer = 'geology';
+let moonSurfaceLayer = 'natural';
 let marsSurfaceLayer = 'natural';
 const surfaceTexturePromises = {};
 
@@ -44,18 +50,25 @@ let holoDataPoints = null;
 let holoInnerGlow = null;
 let holoScanAngle = 0;
 
-// Dedicated full-globe planet views. Earth already has the richer Satellite
-// mode; Mars keeps its embedded surface map. The remaining planets use
-// deterministic procedural maps so the views stay fast and work offline.
+// Dedicated full-globe planet views. The canvas treatments remain only as
+// immediate loading fallbacks; each globe replaces them with an observational
+// spacecraft/telescope map as soon as its lazily loaded asset is ready.
 const DEDICATED_PLANET_KEYS = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
 const PLANET_VIEW_CONFIG = {
-    mercury: { name: 'Mercury', tilt: 0.03, base: '#77736d', atmosphere: null, diameter: '4,879 km', day: '176 Earth days', summary: 'Cratered, airless inner world with extreme day-to-night temperatures.' },
-    venus: { name: 'Venus', tilt: 177.4, base: '#d89a49', atmosphere: 0xf4c36b, diameter: '12,104 km', day: '243 Earth days', summary: 'A cloud-wrapped world with a dense carbon-dioxide atmosphere.' },
+    mercury: { name: 'Mercury', tilt: 0.03, base: '#77736d', atmosphere: null, diameter: '4,879 km', day: '176 Earth days', summary: 'Cratered, airless inner world with extreme day-to-night temperatures.', textureKey: 'mercuryObserved', source: 'USGS / MESSENGER MDIS', resolution: '1024×512', dataKind: 'GLOBAL COLOUR SURFACE MOSAIC', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mercury_messenger_mdis_global_color_mosaic_665m' },
+    venus: { name: 'Venus', tilt: 177.4, base: '#d89a49', atmosphere: 0xf4c36b, diameter: '12,104 km', day: '243 Earth days', summary: 'A cloud-wrapped world with a dense carbon-dioxide atmosphere.', textureKey: 'venusObserved', source: 'USGS / MAGELLAN', resolution: '1024×512', dataKind: 'GLOBAL RADAR SURFACE MOSAIC', sourceUrl: 'https://astrogeology.usgs.gov/search/map/venus_magellan_global_c3_mdir_synthetic_color_mosaic_4641m' },
     mars: { name: 'Mars', tilt: 25.2, base: '#b85132', atmosphere: 0xe77b55, diameter: '6,779 km', day: '24 h 37 m', summary: 'Cold desert world marked by giant volcanoes, canyons, and polar caps.' },
-    jupiter: { name: 'Jupiter', tilt: 3.1, base: '#b9916f', atmosphere: 0xe8c6a5, diameter: '139,820 km', day: '9 h 56 m', summary: 'The largest planet, with fast cloud bands and the Great Red Spot.' },
-    saturn: { name: 'Saturn', tilt: 26.7, base: '#d8c08d', atmosphere: 0xf1deb0, diameter: '116,460 km', day: '10 h 42 m', summary: 'A low-density gas giant surrounded by a bright, complex ring system.' },
-    uranus: { name: 'Uranus', tilt: 97.8, base: '#83cbd2', atmosphere: 0xa7f0f0, diameter: '50,724 km', day: '17 h 14 m', summary: 'A pale ice giant rotating on its side, encircled by narrow dark rings.' },
-    neptune: { name: 'Neptune', tilt: 28.3, base: '#2559b5', atmosphere: 0x4f8fff, diameter: '49,244 km', day: '16 h 6 m', summary: 'A deep-blue ice giant with supersonic winds and evolving dark storms.' },
+    jupiter: { name: 'Jupiter', tilt: 3.1, base: '#b9916f', atmosphere: 0xe8c6a5, diameter: '139,820 km', day: '9 h 56 m', summary: 'The largest planet, with fast cloud bands and the Great Red Spot.', textureKey: 'jupiterObserved', source: 'NASA / ESA HUBBLE OPAL', resolution: '3600×1800', dataKind: 'GLOBAL OBSERVED CLOUD MAP', sourceUrl: 'https://science.nasa.gov/asset/hubble/jupiter-global-map-from-hubble-opal-data-rotation-1/' },
+    saturn: { name: 'Saturn', tilt: 26.7, base: '#d8c08d', atmosphere: 0xf1deb0, diameter: '116,460 km', day: '10 h 42 m', summary: 'A low-density gas giant surrounded by a bright, complex ring system.', textureKey: 'saturnObserved', source: 'NASA-IMAGERY-DERIVED / SSS', resolution: '4096×2048', dataKind: 'REPRESENTATIVE CLOUD MAP', sourceUrl: 'https://www.solarsystemscope.com/textures/' },
+    uranus: { name: 'Uranus', tilt: 97.8, base: '#83cbd2', atmosphere: 0xa7f0f0, diameter: '50,724 km', day: '17 h 14 m', summary: 'A pale ice giant rotating on its side, encircled by narrow dark rings.', textureKey: 'uranusObserved', source: 'NASA-IMAGERY-DERIVED / SSS', resolution: '2048×1024', dataKind: 'REPRESENTATIVE CLOUD MAP', sourceUrl: 'https://www.solarsystemscope.com/textures/' },
+    neptune: { name: 'Neptune', tilt: 28.3, base: '#2559b5', atmosphere: 0x4f8fff, diameter: '49,244 km', day: '16 h 6 m', summary: 'A deep-blue ice giant with supersonic winds and evolving dark storms.', textureKey: 'neptuneObserved', source: 'NASA-IMAGERY-DERIVED / SSS', resolution: '2048×1024', dataKind: 'REPRESENTATIVE CLOUD MAP', sourceUrl: 'https://www.solarsystemscope.com/textures/' },
+};
+
+const MARS_LAYER_META = {
+    natural: { label: 'NATURAL COLOUR MAP · 4096×2048 · LOADED', sourceUrl: '' },
+    elevation: { label: 'NASA/USGS MOLA ELEVATION · 4096×2048 · LOADED', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mars_mgs_mola_global_shaded_relief_463m' },
+    thermal: { label: 'MARS ODYSSEY THEMIS DAY IR · 2048×1024 · LOADED', sourceUrl: 'https://astrogeology.usgs.gov/search/map/mars_odyssey_themis_ir_day_global_mosaic_100m_v12' },
+    orbital: { label: 'MGS MOC ORBITAL MOSAIC · 2048×1024 · LOADED', sourceUrl: 'https://www.mars.asu.edu/data/' },
 };
 
 let planetViewGroups = {};
@@ -136,6 +149,11 @@ function loadSurfaceTexture(key) {
     surfaceTexturePromises[key] = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, (texture) => {
             texture.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+            if (typeof THREE.sRGBEncoding !== 'undefined') texture.encoding = THREE.sRGBEncoding;
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = true;
+            texture.needsUpdate = true;
             texCache[key] = texture;
             resolve(texture);
         }, undefined, reject);
@@ -144,6 +162,13 @@ function loadSurfaceTexture(key) {
         throw error;
     });
     return surfaceTexturePromises[key];
+}
+
+function setLayerSourceText(id, text, state = '') {
+    const source = document.getElementById(id);
+    if (!source) return;
+    source.textContent = text;
+    source.dataset.state = state;
 }
 
 function getMoonLayerTexture(layer) {
@@ -570,16 +595,29 @@ async function setMoonSurfaceLayer(layer) {
     if (!moonSphere) return;
 
     const textureKey = layer === 'natural' ? 'moonNaturalHd' : layer === 'topography' ? 'moonTopography' : null;
+    const labels = {
+        natural: 'NASA LROC · 4096×2048',
+        topography: 'USGS GLD100 · 1024×512',
+        geology: 'USGS GEOLOGY · 2048×1024 · 1:5M',
+    };
+    let layerAvailable = true;
     if (textureKey && !texCache[textureKey]) {
+        setLayerSourceText('moon-layer-source', `${labels[layer]} · LOADING`, 'loading');
         moonSphere.material.map = getMoonLayerTexture(layer) || texCache.moon || texCache.moonGeology || null;
         moonSphere.material.needsUpdate = true;
-        try { await loadSurfaceTexture(textureKey); } catch (error) { console.warn(`Moon ${layer} layer unavailable.`, error); }
+        try { await loadSurfaceTexture(textureKey); }
+        catch (error) {
+            layerAvailable = false;
+            setLayerSourceText('moon-layer-source', `${labels[layer]} · FALLBACK`, 'error');
+            console.warn(`Moon ${layer} layer unavailable.`, error);
+        }
     }
     if (moonSurfaceLayer !== layer) return;
     moonSphere.material.map = getMoonLayerTexture(layer);
     moonSphere.material.bumpMap = texCache.moonNaturalHd || texCache.moon || moonSphere.material.bumpMap;
     moonSphere.material.bumpScale = layer === 'topography' ? 0.065 : 0.045;
     moonSphere.material.needsUpdate = true;
+    setLayerSourceText('moon-layer-source', `${labels[layer]} · ${layerAvailable ? 'LOADED' : 'FALLBACK'}`, layerAvailable ? 'loaded' : 'error');
 }
 
 function setMoonGeologyEnabled(enabled) {
@@ -770,11 +808,35 @@ function createPlanetView(key) {
     addPlanetRings(group, key);
     group.rotation.z = config.tilt * Math.PI / 180;
     group.visible = false;
+    group.userData.surfaceMesh = sphere;
+    group.userData.surfaceState = 'loading';
     planetViewGroups[key] = group;
     earthGroup.add(group);
+    loadPlanetObservation(key, sphere);
 }
 
-function updatePlanetViewReadout(key) {
+async function loadPlanetObservation(key, sphere) {
+    const config = PLANET_VIEW_CONFIG[key];
+    if (!config?.textureKey || !sphere) return;
+    if (currentViewMode === key) updatePlanetViewReadout(key, 'loading');
+    try {
+        const texture = await loadSurfaceTexture(config.textureKey);
+        sphere.material.map = texture;
+        sphere.material.bumpMap = key === 'mercury' || key === 'venus' ? texture : null;
+        sphere.material.bumpScale = key === 'mercury' ? 0.035 : key === 'venus' ? 0.018 : 0;
+        sphere.material.needsUpdate = true;
+        const group = planetViewGroups[key];
+        if (group) group.userData.surfaceState = 'loaded';
+        if (currentViewMode === key) updatePlanetViewReadout(key, 'loaded');
+    } catch (error) {
+        const group = planetViewGroups[key];
+        if (group) group.userData.surfaceState = 'fallback';
+        if (currentViewMode === key) updatePlanetViewReadout(key, 'fallback');
+        console.warn(`${config.name} observational texture unavailable.`, error);
+    }
+}
+
+function updatePlanetViewReadout(key, forcedState = '') {
     const config = PLANET_VIEW_CONFIG[key];
     if (!config) return;
     const title = document.getElementById('orrery-title');
@@ -783,7 +845,24 @@ function updatePlanetViewReadout(key) {
     const focus = document.getElementById('explore-focus');
     if (title) title.textContent = config.name;
     if (copy) copy.textContent = `${config.diameter} diameter · ${config.day} rotation · ${config.summary}`;
-    if (live) live.textContent = `DEDICATED PLANET GLOBE · ${config.tilt.toFixed(1)}° AXIAL TILT · VISUAL MODEL`;
+    const state = forcedState || planetViewGroups[key]?.userData?.surfaceState || 'loading';
+    const stateLabel = state === 'loaded' ? 'LOADED' : state === 'fallback' ? 'FALLBACK MODEL' : 'LOADING…';
+    if (live) live.textContent = key === 'mars'
+        ? MARS_LAYER_META[marsSurfaceLayer].label
+        : `${config.dataKind || 'SURFACE MAP'} · ${config.source || 'LOCAL MAP'} · ${config.resolution || ''} · ${stateLabel}`;
+    const action = document.getElementById('orrery-action');
+    if (action) {
+        const sourceUrl = key === 'mars' ? MARS_LAYER_META[marsSurfaceLayer].sourceUrl : config.sourceUrl;
+        if (sourceUrl) {
+            action.textContent = 'Open imagery source ↗';
+            action.dataset.sourceUrl = sourceUrl;
+            action.dataset.sourcePlanet = key;
+        } else {
+            action.textContent = 'Open catalog';
+            delete action.dataset.sourceUrl;
+            delete action.dataset.sourcePlanet;
+        }
+    }
     if (focus) focus.textContent = `${config.name} globe`;
 }
 
@@ -816,10 +895,23 @@ async function setMarsSurfaceLayer(layer) {
     if (!marsSphere) createMarsView();
     if (!marsSphere) return;
     const textureKey = layer === 'elevation' ? 'marsElevation' : layer === 'thermal' ? 'marsThermal' : layer === 'orbital' ? 'marsOrbital' : null;
+    const sourceLabels = {
+        natural: 'NATURAL COLOUR · 4096×2048',
+        elevation: 'NASA/USGS MOLA · 4096×2048',
+        thermal: 'MARS ODYSSEY THEMIS · 2048×1024',
+        orbital: 'MGS MOC · 2048×1024',
+    };
+    let layerAvailable = true;
     if (textureKey && !texCache[textureKey]) {
+        setLayerSourceText('mars-layer-source', `${sourceLabels[layer]} · LOADING`, 'loading');
         marsSphere.material.map = texCache.mars || marsSphere.material.map;
         marsSphere.material.needsUpdate = true;
-        try { await loadSurfaceTexture(textureKey); } catch (error) { console.warn(`Mars ${layer} layer unavailable.`, error); }
+        try { await loadSurfaceTexture(textureKey); }
+        catch (error) {
+            layerAvailable = false;
+            setLayerSourceText('mars-layer-source', `${sourceLabels[layer]} · FALLBACK`, 'error');
+            console.warn(`Mars ${layer} layer unavailable.`, error);
+        }
     }
     if (marsSurfaceLayer !== layer) return;
     marsSphere.material.map = getMarsLayerTexture(layer);
@@ -829,9 +921,10 @@ async function setMarsSurfaceLayer(layer) {
     marsSphere.material.bumpScale = layer === 'elevation' ? 0.07 : 0.03;
     marsSphere.material.color.setHex(0xffffff);
     marsSphere.material.needsUpdate = true;
+    setLayerSourceText('mars-layer-source', `${sourceLabels[layer]} · ${layerAvailable ? 'LOADED' : 'FALLBACK'}`, layerAvailable ? 'loaded' : 'error');
     const live = document.getElementById('orrery-live');
     if (live && currentViewMode === 'mars') {
-        live.textContent = `DEDICATED PLANET GLOBE · 25.2° AXIAL TILT · ${layer.toUpperCase()} SURFACE LAYER`;
+        updatePlanetViewReadout('mars');
     }
 }
 
@@ -908,6 +1001,7 @@ function setViewMode(mode) {
     if (mode === 'moon') {
         if (!moonSphere) createMoonView();
         if (moonSphere) moonSphere.visible = true;
+        setMoonSurfaceLayer(moonSurfaceLayer);
         if (typeof moonToolVisuals !== 'undefined') moonToolVisuals.visible = true;
     } else {
         if (moonSphere) moonSphere.visible = false;

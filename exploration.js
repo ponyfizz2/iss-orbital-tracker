@@ -82,6 +82,13 @@ const EXPLORATION_TOURS = [
       moveCameraTo(new THREE.Vector3(0, 65, 86), new THREE.Vector3(0, 0, 0));
     },
   },
+  {
+    id: 'sun-live',
+    label: 'Live',
+    title: 'Solar observatory',
+    note: 'Shows NASA Solar Dynamics Observatory imagery with filters for sunspots, magnetic fields, coronal loops, prominences, and flares.',
+    run: () => setBodyMode('sun-live'),
+  },
 ];
 
 const CATALOG_OBJECTS = [
@@ -89,7 +96,7 @@ const CATALOG_OBJECTS = [
   { key: 'earth', name: 'Earth', type: 'planet', mode: 'satellite', tag: 'home world', note: 'Textured Earth with day-night shading, clouds, city lights, borders, and station tracking.' },
   { key: 'moon', name: 'Moon', type: 'moon', mode: 'moon', tag: 'surface tools', note: 'Lunar surface with Apollo labels plus measuring tools for distances and crater areas.' },
   { key: 'mars', name: 'Mars', type: 'planet', mode: 'mars', tag: 'red planet', note: 'Mars globe with relay-orbit context for exploration planning.' },
-  { key: 'sun', name: 'Sun', type: 'star', mode: 'solar', tag: 'orrery', note: 'Center of the compact solar-system survey.' },
+  { key: 'sun', name: 'Sun', type: 'star', mode: 'sun-live', tag: 'live SDO', note: 'Latest NASA SDO views of sunspots, magnetic fields, the corona, prominences, and flares.' },
   { key: 'mercury', name: 'Mercury', type: 'planet', mode: 'mercury', tag: 'surface globe', note: 'Inspect Mercury as a full-size cratered globe.' },
   { key: 'venus', name: 'Venus', type: 'planet', mode: 'venus', tag: 'cloud globe', note: 'Inspect the global cloud patterns of Venus.' },
   { key: 'jupiter', name: 'Jupiter', type: 'planet', mode: 'jupiter', tag: 'storm globe', note: 'Inspect Jupiter’s belts, zones, and Great Red Spot.' },
@@ -123,6 +130,17 @@ let solarSelectedKey = 'earth';
 let lastSolarEphemerisUpdate = 0;
 let explorationReady = false;
 let lastExplorationMode = 'dots';
+let liveSunFilter = 'HMIIC';
+let liveSunRefreshTimer = null;
+
+const LIVE_SUN_FILTERS = {
+  HMIIC: { title: 'HMI Continuum', description: 'Visible photosphere and sunspots', file: 'HMIIC' },
+  HMIB: { title: 'HMI Magnetogram', description: 'Line-of-sight magnetic polarity', file: 'HMIB' },
+  '0193': { title: 'AIA 193 Å', description: 'Hot corona, active regions, and coronal holes', file: '0193' },
+  '0171': { title: 'AIA 171 Å', description: 'Quiet corona and magnetic loop structure', file: '0171' },
+  '0304': { title: 'AIA 304 Å', description: 'Chromosphere, transition region, and prominences', file: '0304' },
+  '0131': { title: 'AIA 131 Å', description: 'Very hot flare plasma and cooler active-region loops', file: '0131' },
+};
 
 initExplorationUi();
 wrapExplorationHooks();
@@ -139,6 +157,7 @@ function initExplorationUi() {
 
   toggle.addEventListener('click', () => panel.classList.toggle('collapsed'));
   close?.addEventListener('click', () => panel.classList.add('collapsed'));
+  initLiveSunPanel();
 
   document.querySelectorAll('[data-explore-tab]').forEach((btn) => {
     btn.addEventListener('click', () => setExploreTab(btn.dataset.exploreTab));
@@ -165,7 +184,12 @@ function initExplorationUi() {
   updateExplorationClock();
   setInterval(updateExplorationClock, 1000);
 
-  document.getElementById('orrery-action')?.addEventListener('click', () => {
+  document.getElementById('orrery-action')?.addEventListener('click', (event) => {
+    const sourceUrl = event.currentTarget.dataset.sourceUrl;
+    if (sourceUrl) {
+      window.open(sourceUrl, '_blank', 'noopener');
+      return;
+    }
     document.getElementById('explore-panel')?.classList.remove('collapsed');
     setExploreTab('catalog');
   });
@@ -308,19 +332,23 @@ function setBodyMode(mode) {
 function syncExplorationMode(mode) {
   if (!explorationReady) return;
   const isSolar = mode === 'solar';
+  const isLiveSun = mode === 'sun-live';
   const isPlanet = typeof isPlanetViewMode === 'function' && isPlanetViewMode(mode);
   if (isSolar) createSolarSystemView();
   if (solarGroup) solarGroup.visible = isSolar;
-  if (typeof earthGroup !== 'undefined' && earthGroup) earthGroup.visible = !isSolar;
+  if (typeof earthGroup !== 'undefined' && earthGroup) earthGroup.visible = !isSolar && !isLiveSun;
+  setLiveSunVisible(isLiveSun);
 
   const dataPanel = document.querySelector('.data-panel');
-  if (dataPanel) dataPanel.style.display = (isSolar || isPlanet) ? 'none' : '';
+  if (dataPanel) dataPanel.style.display = (isSolar || isPlanet || isLiveSun) ? 'none' : '';
 
   const readout = document.getElementById('orrery-readout');
   if (readout) readout.classList.toggle('visible', isSolar || isPlanet);
   if (isPlanet && typeof updatePlanetViewReadout === 'function') updatePlanetViewReadout(mode);
 
-  if (isSolar) {
+  if (isLiveSun) {
+    setFocus('Live Sun · NASA SDO');
+  } else if (isSolar) {
     setFocus('Solar system survey');
     if (typeof controls !== 'undefined' && controls) {
       controls.minDistance = 3;
@@ -338,6 +366,60 @@ function syncExplorationMode(mode) {
     }
   }
   lastExplorationMode = mode;
+}
+
+function initLiveSunPanel() {
+  document.querySelectorAll('[data-sun-filter]').forEach((button) => {
+    button.addEventListener('click', () => selectLiveSunFilter(button.dataset.sunFilter));
+  });
+}
+
+function setLiveSunVisible(visible) {
+  const panel = document.getElementById('live-sun-panel');
+  if (!panel) return;
+  panel.classList.toggle('visible', visible);
+  if (visible) {
+    refreshLiveSunImage();
+    if (!liveSunRefreshTimer) liveSunRefreshTimer = setInterval(refreshLiveSunImage, 5 * 60 * 1000);
+  } else if (liveSunRefreshTimer) {
+    clearInterval(liveSunRefreshTimer);
+    liveSunRefreshTimer = null;
+  }
+}
+
+function selectLiveSunFilter(filter) {
+  if (!LIVE_SUN_FILTERS[filter]) return;
+  liveSunFilter = filter;
+  document.querySelectorAll('[data-sun-filter]').forEach((button) => {
+    const active = button.dataset.sunFilter === filter;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  refreshLiveSunImage(true);
+}
+
+function refreshLiveSunImage(force = false) {
+  const image = document.getElementById('live-sun-image');
+  const status = document.getElementById('live-sun-status');
+  const updated = document.getElementById('live-sun-updated');
+  const title = document.getElementById('live-sun-title');
+  const description = document.getElementById('live-sun-description');
+  const config = LIVE_SUN_FILTERS[liveSunFilter];
+  if (!image || !config) return;
+  if (title) title.textContent = config.title;
+  if (description) description.textContent = config.description;
+  if (status) status.textContent = 'LOADING LATEST SDO FRAME…';
+  const cacheWindow = force ? Date.now() : Math.floor(Date.now() / 300000);
+  image.onload = () => {
+    const now = new Date();
+    if (status) status.textContent = 'LIVE · NASA SDO';
+    if (updated) updated.textContent = `1024×1024 · loaded ${now.toISOString().slice(11, 16)} UTC · auto-refresh 5 min`;
+  };
+  image.onerror = () => {
+    if (status) status.textContent = 'SDO FEED TEMPORARILY UNAVAILABLE';
+    if (updated) updated.textContent = 'The viewer will retry automatically.';
+  };
+  image.src = `https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_${config.file}.jpg?refresh=${cacheWindow}`;
 }
 
 function getJulianDate(date) {
@@ -525,10 +607,16 @@ function updateSolarReadout() {
   if (!obj) return;
   const title = document.getElementById('orrery-title');
   const copy = document.getElementById('orrery-copy');
+  const action = document.getElementById('orrery-action');
   if (title) title.textContent = obj.name || solarSelectedKey;
   if (copy) {
     const distance = solarSelectedKey === 'sun' ? 'Heliocentric origin' : `${(obj.distanceAu || 0).toFixed(3)} AU from Sun now`;
     copy.textContent = `${distance} · ${obj.copy || 'Current compact solar-system position.'}`;
+  }
+  if (action) {
+    action.textContent = 'Open catalog';
+    delete action.dataset.sourceUrl;
+    delete action.dataset.sourcePlanet;
   }
 }
 
