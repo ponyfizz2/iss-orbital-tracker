@@ -929,19 +929,21 @@
     .live-sun-panel {
       position: absolute;
       z-index: 35;
-      top: 76px;
+      /* Leave the global body selector usable so a visitor can switch away
+         from the observatory without hunting for an off-screen close button. */
+      top: 126px;
       bottom: 24px;
       left: 50%;
-      width: min(760px, calc(100vw - 40px));
+      width: min(1120px, calc(100vw - 28px));
       transform: translateX(-50%);
       display: none;
       grid-template-rows: auto minmax(0, 1fr) auto;
       gap: 12px;
-      padding: 14px;
-      border: 1px solid rgba(251, 146, 60, 0.34);
-      border-radius: 12px;
-      background: rgba(5, 8, 14, 0.92);
-      backdrop-filter: blur(18px);
+      padding: 6px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      backdrop-filter: none;
       pointer-events: auto;
       box-shadow: 0 22px 80px rgba(0, 0, 0, 0.45);
     }
@@ -968,14 +970,21 @@
     }
 
     .live-sun-stage {
+      width: min(100%, calc(100vh - 250px));
       min-height: 0;
+      aspect-ratio: 1;
+      justify-self: center;
       display: grid;
       place-items: center;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      background: #000;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      cursor: grab;
+      touch-action: none;
     }
+
+    .live-sun-stage.dragging { cursor: grabbing; }
 
     .live-sun-stage img {
       display: block;
@@ -983,6 +992,10 @@
       height: 100%;
       object-fit: contain;
       image-rendering: auto;
+      max-width: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      transition: transform 0.08s linear;
     }
 
     .live-sun-filters {
@@ -991,6 +1004,17 @@
       overflow-x: auto;
       padding-bottom: 2px;
     }
+
+    .live-sun-header,
+    .live-sun-filters,
+    .live-sun-meta {
+      padding: 7px 10px;
+      border-radius: 9px;
+      background: rgba(5, 8, 14, 0.68);
+      backdrop-filter: blur(12px);
+    }
+
+    .live-sun-toolbar { display: flex; align-items: center; gap: 8px; }
 
     .sun-filter-btn {
       min-width: max-content;
@@ -1199,6 +1223,7 @@
           <button class="sun-filter-btn" data-sun-filter="0171">Loops · 171 Å</button>
           <button class="sun-filter-btn" data-sun-filter="0304">Prominences · 304 Å</button>
           <button class="sun-filter-btn" data-sun-filter="0131">Flares · 131 Å</button>
+          <button class="sun-filter-btn" id="live-sun-reset" type="button">Reset zoom</button>
         </div>
         <div class="live-sun-meta"><span id="live-sun-updated">Latest 1024px feed</span><a href="https://sdo.gsfc.nasa.gov/data/" target="_blank" rel="noopener">NASA SDO source ↗</a></div>
       </div>
