@@ -22,10 +22,10 @@ function initMoonTools() {
     toolbar.className = 'moon-toolbar hidden';
     toolbar.innerHTML = `
         <div class="mt-label">MOON TOOLS</div>
-        <button class="mt-btn surface-layer-btn" data-moon-layer="natural" title="NASA LROC natural-colour mosaic">Natural</button>
+        <button class="mt-btn surface-layer-btn active" data-moon-layer="natural" title="NASA LROC natural-colour mosaic, 4096 × 2048 pixels">Natural 4K</button>
         <button class="mt-btn surface-layer-btn" data-moon-layer="topography" title="USGS GLD100 colour-shaded topography">Topography</button>
-        <button class="mt-btn surface-layer-btn active" data-moon-layer="geology" title="USGS Unified Geologic Map of the Moon">Geology</button>
-        <span class="moon-source" id="moon-layer-source">USGS GEOLOGY · 1:5M</span>
+        <button class="mt-btn surface-layer-btn" data-moon-layer="geology" title="USGS Unified Geologic Map of the Moon">Geology</button>
+        <span class="moon-source" id="moon-layer-source">NASA LROC · 4096×2048 · LOADING</span>
         <button class="mt-btn active" data-tool="pan">🖐️ Pan</button>
         <button class="mt-btn" data-tool="distance">📏 Distance</button>
         <button class="mt-btn" data-tool="crater">⭕ Crater Area</button>
@@ -38,11 +38,11 @@ function initMoonTools() {
     marsToolbar.className = 'moon-toolbar surface-toolbar hidden';
     marsToolbar.innerHTML = `
         <div class="mt-label">MARS LAYERS</div>
-        <button class="mt-btn surface-layer-btn active" data-mars-layer="natural">Natural</button>
+        <button class="mt-btn surface-layer-btn active" data-mars-layer="natural">Natural 4K</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="elevation">Elevation</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="thermal">Thermal IR</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="orbital">Orbital</button>
-        <span class="moon-source" id="mars-layer-source">NATURAL SURFACE</span>
+        <span class="moon-source" id="mars-layer-source">NATURAL COLOUR · 4096×2048 · LOADED</span>
         <a class="mt-btn surface-external" href="https://murray-lab.caltech.edu/CTX/V01/SceneView/" target="_blank" rel="noopener" title="Open the official 5 m/pixel CTX mosaic">CTX 5m ↗</a>
     `;
     document.body.appendChild(marsToolbar);
@@ -142,9 +142,9 @@ function initMoonTools() {
     });
 
     const moonSources = {
-        natural: 'NASA LROC · 4K',
-        topography: 'USGS GLD100 · ELEVATION',
-        geology: 'USGS GEOLOGY · 1:5M',
+        natural: 'NASA LROC · 4096×2048',
+        topography: 'USGS GLD100 · 1024×512',
+        geology: 'USGS GEOLOGY · 2048×1024 · 1:5M',
     };
     document.querySelectorAll('[data-moon-layer]').forEach((button) => {
         button.addEventListener('click', async (event) => {
@@ -157,16 +157,16 @@ function initMoonTools() {
             try { await window.setMoonSurfaceLayer?.(layer); }
             finally {
                 selectedButton.classList.remove('loading');
-                if (source) source.textContent = moonSources[layer];
+                if (source && source.dataset.state !== 'error') source.textContent = `${moonSources[layer]} · LOADED`;
             }
         });
     });
 
     const marsSources = {
-        natural: 'NATURAL SURFACE',
-        elevation: 'NASA/USGS MOLA · 4K',
-        thermal: 'MARS ODYSSEY THEMIS · IR',
-        orbital: 'MGS MOC · ORBITAL MOSAIC',
+        natural: 'NATURAL COLOUR · 4096×2048',
+        elevation: 'NASA/USGS MOLA · 4096×2048',
+        thermal: 'MARS ODYSSEY THEMIS · 2048×1024',
+        orbital: 'MGS MOC · 2048×1024',
     };
     document.querySelectorAll('[data-mars-layer]').forEach((button) => {
         button.addEventListener('click', async (event) => {
@@ -179,7 +179,7 @@ function initMoonTools() {
             try { await window.setMarsSurfaceLayer?.(layer); }
             finally {
                 selectedButton.classList.remove('loading');
-                if (source) source.textContent = marsSources[layer];
+                if (source && source.dataset.state !== 'error') source.textContent = `${marsSources[layer]} · LOADED`;
             }
         });
     });
