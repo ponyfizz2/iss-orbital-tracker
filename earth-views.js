@@ -981,6 +981,154 @@ async function setMarsSurfaceLayer(layer) {
 
 window.setMarsSurfaceLayer = setMarsSurfaceLayer;
 
+/* ====== PROGRESSIVE SURFACE DETAIL OVERLAY ======
+   The 4K global texture is an overview. At close range, this patch replaces
+   the currently viewed geographic area with a fresh, tighter WMS image rather
+   than enlarging the same pixels in a flat inspection pane. */
+let surfaceDetailPatch = null;
+let surfaceDetailTexture = null;
+let surfaceDetailRequestId = 0;
+let surfaceDetailTimer = null;
+let surfaceDetailControlsAttached = false;
+const surfaceDetailState = { body: null, level: 1, lon: 0, lat: 0 };
+const SURFACE_DETAIL_WMS = {
+    moon: { service: 'https://planetarymaps.usgs.gov/cgi-bin/mapserv', map: '/maps/earth/moon_simp_cyl.map', layer: 'LROC_WAC', label: 'USGS LROC WAC' },
+    mars: { service: 'https://planetarymaps.usgs.gov/cgi-bin/mapserv', map: '/maps/mars/mars_simp_cyl.map', layer: 'THEMIS_controlled', label: 'USGS THEMIS controlled mosaic' },
+};
+
+function emitSurfaceDetailState(extra = {}) {
+    window.dispatchEvent(new CustomEvent('surface-detail-update', { detail: { ...surfaceDetailState, ...extra } }));
+}
+
+function getSurfaceDetailLevel(mesh) {
+    const center = new THREE.Vector3();
+    mesh.getWorldPosition(center);
+    const distance = camera.position.distanceTo(center);
+    return Math.max(1, Math.min(8, Math.floor(32 / Math.max(5.2, distance))));
+}
+
+function getSurfaceDetailFocus(mesh) {
+    const picker = new THREE.Raycaster();
+    picker.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const hit = picker.intersectObject(mesh, false)[0];
+    if (!hit) return { lon: surfaceDetailState.lon, lat: surfaceDetailState.lat };
+    const point = mesh.worldToLocal(hit.point.clone()).normalize();
+    const phi = Math.atan2(point.z, -point.x);
+    return {
+        lon: THREE.MathUtils.radToDeg(phi),
+        lat: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(point.y, -1, 1))),
+    };
+}
+
+function getSurfaceDetailBounds(level, focus) {
+    const halfLon = 180 / level;
+    const halfLat = 90 / level;
+    const lon = Math.max(-180 + halfLon, Math.min(180 - halfLon, focus.lon));
+    const lat = Math.max(-90 + halfLat, Math.min(90 - halfLat, focus.lat));
+    return { lon, lat, minLon: lon - halfLon, maxLon: lon + halfLon, minLat: lat - halfLat, maxLat: lat + halfLat };
+}
+
+function buildSurfaceDetailWmsUrl(config, bounds) {
+    const params = new URLSearchParams({
+        map: config.map, SERVICE: 'WMS', VERSION: '1.1.1', REQUEST: 'GetMap', LAYERS: config.layer,
+        STYLES: '', SRS: 'EPSG:4326', BBOX: `${bounds.minLon},${bounds.minLat},${bounds.maxLon},${bounds.maxLat}`,
+        WIDTH: '3072', HEIGHT: '1536', FORMAT: 'image/png', TRANSPARENT: 'false',
+    });
+    return `${config.service}?${params.toString()}`;
+}
+
+function clearSurfaceDetailOverlay() {
+    surfaceDetailState.body = null;
+    if (surfaceDetailTimer) clearTimeout(surfaceDetailTimer);
+    surfaceDetailTimer = null;
+    if (surfaceDetailPatch) {
+        earthGroup.remove(surfaceDetailPatch);
+        surfaceDetailPatch.geometry.dispose();
+        surfaceDetailPatch.material.dispose();
+        surfaceDetailPatch = null;
+    }
+    if (surfaceDetailTexture) {
+        surfaceDetailTexture.dispose();
+        surfaceDetailTexture = null;
+    }
+    emitSurfaceDetailState({ active: false, label: 'DETAIL OVERLAY OFF' });
+}
+
+function scheduleSurfaceDetailRefresh(immediate = false) {
+    if (!surfaceDetailState.body) return;
+    if (surfaceDetailTimer) clearTimeout(surfaceDetailTimer);
+    surfaceDetailTimer = setTimeout(refreshSurfaceDetailOverlay, immediate ? 0 : 260);
+}
+
+function attachSurfaceDetailControls() {
+    if (surfaceDetailControlsAttached || typeof controls === 'undefined' || !controls) return;
+    controls.addEventListener('change', () => scheduleSurfaceDetailRefresh());
+    surfaceDetailControlsAttached = true;
+}
+
+function refreshSurfaceDetailOverlay() {
+    const body = surfaceDetailState.body;
+    const mesh = body === 'moon' ? moonSphere : marsSphere;
+    const config = SURFACE_DETAIL_WMS[body];
+    if (!mesh || !mesh.visible || !config) return;
+    const level = getSurfaceDetailLevel(mesh);
+    const focus = getSurfaceDetailFocus(mesh);
+    const bounds = getSurfaceDetailBounds(level, focus);
+    surfaceDetailState.level = level;
+    surfaceDetailState.lon = bounds.lon;
+    surfaceDetailState.lat = bounds.lat;
+    const requestId = ++surfaceDetailRequestId;
+    emitSurfaceDetailState({ active: true, label: `${config.label} · ${level}× DETAIL · LOADING` });
+    new THREE.TextureLoader().load(buildSurfaceDetailWmsUrl(config, bounds), (texture) => {
+        if (requestId !== surfaceDetailRequestId || surfaceDetailState.body !== body) {
+            texture.dispose();
+            return;
+        }
+        texture.anisotropy = Math.min(16, renderer?.capabilities?.getMaxAnisotropy?.() || 4);
+        if (typeof THREE.sRGBEncoding !== 'undefined') texture.encoding = THREE.sRGBEncoding;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        // SphereGeometry starts its longitude sweep at the globe's -X seam.
+        // getSurfaceDetailFocus uses the same seam (atan2(z, -x)), so do not
+        // add an extra half-turn here or the patch will land on the far side.
+        const phiStart = THREE.MathUtils.degToRad(bounds.minLon);
+        const phiLength = THREE.MathUtils.degToRad(bounds.maxLon - bounds.minLon);
+        const thetaStart = THREE.MathUtils.degToRad(90 - bounds.maxLat);
+        const thetaLength = THREE.MathUtils.degToRad(bounds.maxLat - bounds.minLat);
+        const geometry = new THREE.SphereGeometry(EARTH_RADIUS_UNITS * 1.006, 96, 64, phiStart, phiLength, thetaStart, thetaLength);
+        const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide, depthWrite: true });
+        const patch = new THREE.Mesh(geometry, material);
+        patch.renderOrder = 3;
+        if (surfaceDetailPatch) {
+            earthGroup.remove(surfaceDetailPatch);
+            surfaceDetailPatch.geometry.dispose();
+            surfaceDetailPatch.material.dispose();
+        }
+        if (surfaceDetailTexture) surfaceDetailTexture.dispose();
+        surfaceDetailPatch = patch;
+        surfaceDetailTexture = texture;
+        earthGroup.add(patch);
+        emitSurfaceDetailState({ active: true, label: `${config.label} · ${level}× DETAIL · 3072×1536 LOADED` });
+    }, undefined, () => {
+        if (requestId === surfaceDetailRequestId) emitSurfaceDetailState({ active: true, label: `${config.label} · TEMPORARILY UNAVAILABLE` });
+    });
+}
+
+function toggleSurfaceDetailOverlay(body) {
+    if (surfaceDetailState.body === body) {
+        clearSurfaceDetailOverlay();
+        return;
+    }
+    clearSurfaceDetailOverlay();
+    attachSurfaceDetailControls();
+    surfaceDetailState.body = body;
+    emitSurfaceDetailState({ active: true, label: 'DETAIL OVERLAY STARTING…' });
+    scheduleSurfaceDetailRefresh(true);
+}
+
+window.toggleSurfaceDetailOverlay = toggleSurfaceDetailOverlay;
+window.addEventListener('resize', () => scheduleSurfaceDetailRefresh());
+
 /* ====== VIEW MODE SWITCHING ====== */
 function setViewMode(mode) {
     if (typeof currentViewMode !== 'undefined' && currentViewMode === mode) return;
@@ -1075,10 +1223,12 @@ function setViewMode(mode) {
         if (planetViewGroups[mode]) planetViewGroups[mode].visible = true;
     }
     if (isPlanetViewMode(mode)) updatePlanetViewReadout(mode);
+    if (surfaceDetailState.body && mode !== surfaceDetailState.body) clearSurfaceDetailOverlay();
 }
 
 /* Called each frame for active mode updates */
 function updateActiveViewMode() {
+    attachSurfaceDetailControls();
     if (typeof currentViewMode === 'undefined') return;
 
     if (currentViewMode === 'satellite') {
