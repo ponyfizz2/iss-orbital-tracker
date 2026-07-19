@@ -260,6 +260,38 @@
       box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.1);
     }
 
+    .planet-picker {
+      margin: -4px 0 14px;
+    }
+
+    .planet-picker .section-label {
+      margin-bottom: 6px;
+    }
+
+    .planet-switcher {
+      display: flex;
+      gap: 5px;
+      overflow-x: auto;
+      padding: 1px 1px 6px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148, 163, 184, .35) transparent;
+    }
+
+    .planet-switcher .view-btn {
+      flex: 0 0 auto;
+      min-width: 74px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 7px;
+      padding: 7px 8px;
+    }
+
+    .planet-switcher .view-btn.active {
+      color: #fde68a;
+      background: rgba(249, 115, 22, .14);
+      border-color: rgba(251, 146, 60, .48);
+      box-shadow: inset 0 0 12px rgba(249, 115, 22, .08);
+    }
+
     .dot-mode-only {
       transition: opacity .3s ease, max-height .3s ease;
     }
@@ -953,6 +985,17 @@
         <button class="view-btn" data-view="mars" id="view-mars">🔴 Mars</button>
         <button class="view-btn" data-view="solar" id="view-solar">☉ Solar</button>
       </div>
+      <div class="planet-picker">
+        <div class="section-label">PLANET GLOBES</div>
+        <div class="planet-switcher" aria-label="Dedicated planet views">
+          <button class="view-btn" data-view="mercury" id="view-mercury">Mercury</button>
+          <button class="view-btn" data-view="venus" id="view-venus">Venus</button>
+          <button class="view-btn" data-view="jupiter" id="view-jupiter">Jupiter</button>
+          <button class="view-btn" data-view="saturn" id="view-saturn">Saturn</button>
+          <button class="view-btn" data-view="uranus" id="view-uranus">Uranus</button>
+          <button class="view-btn" data-view="neptune" id="view-neptune">Neptune</button>
+        </div>
+      </div>
       <div class="control-group dot-mode-only" id="resolution-group">
         <label>Resolution <span id="val-den">40k</span></label>
         <input type="range" id="dot-density" min="10000" max="80000" step="5000" value="40000">
@@ -1108,11 +1151,11 @@
           'vendor/OrbitControls.js?v=7',
           'app.js?v=8',
           'earth.js?v=7',
-          'earth-views.js?v=8',
+          'earth-views.js?v=10',
           'satellites.js?v=12',
           'tracking.js?v=8'
         ],
-        ['moon-tools.js?v=8', 'exploration.js?v=11']
+        ['moon-tools.js?v=10', 'exploration.js?v=12']
       ];
       const textureScripts = ['moon-texture.js?v=7', 'mars-texture.js?v=7'];
 

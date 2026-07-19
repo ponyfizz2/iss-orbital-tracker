@@ -22,14 +22,30 @@ function initMoonTools() {
     toolbar.className = 'moon-toolbar hidden';
     toolbar.innerHTML = `
         <div class="mt-label">MOON TOOLS</div>
-        <button class="mt-btn active" id="btn-moon-geology" title="USGS Unified Geologic Map of the Moon">🌈 Geology</button>
-        <span class="moon-source">USGS 1:5M</span>
+        <button class="mt-btn surface-layer-btn" data-moon-layer="natural" title="NASA LROC natural-colour mosaic">Natural</button>
+        <button class="mt-btn surface-layer-btn" data-moon-layer="topography" title="USGS GLD100 colour-shaded topography">Topography</button>
+        <button class="mt-btn surface-layer-btn active" data-moon-layer="geology" title="USGS Unified Geologic Map of the Moon">Geology</button>
+        <span class="moon-source" id="moon-layer-source">USGS GEOLOGY · 1:5M</span>
         <button class="mt-btn active" data-tool="pan">🖐️ Pan</button>
         <button class="mt-btn" data-tool="distance">📏 Distance</button>
         <button class="mt-btn" data-tool="crater">⭕ Crater Area</button>
         <button class="mt-btn" id="btn-clear-moon">🗑️ Clear</button>
     `;
     document.body.appendChild(toolbar);
+
+    const marsToolbar = document.createElement('div');
+    marsToolbar.id = 'mars-toolbar';
+    marsToolbar.className = 'moon-toolbar surface-toolbar hidden';
+    marsToolbar.innerHTML = `
+        <div class="mt-label">MARS LAYERS</div>
+        <button class="mt-btn surface-layer-btn active" data-mars-layer="natural">Natural</button>
+        <button class="mt-btn surface-layer-btn" data-mars-layer="elevation">Elevation</button>
+        <button class="mt-btn surface-layer-btn" data-mars-layer="thermal">Thermal IR</button>
+        <button class="mt-btn surface-layer-btn" data-mars-layer="orbital">Orbital</button>
+        <span class="moon-source" id="mars-layer-source">NATURAL SURFACE</span>
+        <a class="mt-btn surface-external" href="https://murray-lab.caltech.edu/CTX/V01/SceneView/" target="_blank" rel="noopener" title="Open the official 5 m/pixel CTX mosaic">CTX 5m ↗</a>
+    `;
+    document.body.appendChild(marsToolbar);
 
     // Styles for toolbar
     const style = document.createElement('style');
@@ -49,6 +65,7 @@ function initMoonTools() {
             z-index: 50;
             pointer-events: auto;
             transition: opacity 0.3s, transform 0.3s;
+            visibility: visible;
             align-items: center;
             max-width: calc(100vw - 20px);
             overflow-x: auto;
@@ -57,6 +74,7 @@ function initMoonTools() {
             opacity: 0;
             pointer-events: none;
             transform: translate(-50%, 20px);
+            visibility: hidden;
         }
         .mt-label {
             font-size: 0.6rem;
@@ -66,11 +84,17 @@ function initMoonTools() {
             margin-left: 8px;
             font-family: 'JetBrains Mono', monospace;
         }
-        #btn-moon-geology.active {
+        .surface-layer-btn.active {
             color: #f0abfc;
             border-color: rgba(217, 70, 239, 0.65);
             background: linear-gradient(90deg, rgba(239,68,68,0.14), rgba(59,130,246,0.14));
         }
+        .surface-layer-btn.loading::after {
+            content: '…';
+            margin-left: 3px;
+            animation: surfacePulse .8s ease-in-out infinite alternate;
+        }
+        @keyframes surfacePulse { to { opacity: .25; } }
         .moon-source {
             color: #c084fc;
             font: 0.52rem 'JetBrains Mono', monospace;
@@ -89,6 +113,9 @@ function initMoonTools() {
             transition: all 0.2s;
         }
         .mt-btn:hover { background: rgba(255,255,255,0.1); }
+        .surface-external { text-decoration: none; white-space: nowrap; }
+        .orrery-readout.surface-toolbar-open,
+        .data-panel.surface-toolbar-open { bottom: 210px; }
         .mt-btn.active {
             background: rgba(250, 204, 21, 0.15);
             border-color: rgba(250, 204, 21, 0.5);
@@ -114,11 +141,47 @@ function initMoonTools() {
         clearMoonVisuals();
     });
 
-    document.getElementById('btn-moon-geology').addEventListener('click', (event) => {
-        const enabled = !event.currentTarget.classList.contains('active');
-        event.currentTarget.classList.toggle('active', enabled);
-        event.currentTarget.innerHTML = enabled ? '🌈 Geology' : '🌕 Natural';
-        if (typeof setMoonGeologyEnabled === 'function') setMoonGeologyEnabled(enabled);
+    const moonSources = {
+        natural: 'NASA LROC · 4K',
+        topography: 'USGS GLD100 · ELEVATION',
+        geology: 'USGS GEOLOGY · 1:5M',
+    };
+    document.querySelectorAll('[data-moon-layer]').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            const selectedButton = event.currentTarget;
+            const layer = selectedButton.dataset.moonLayer;
+            document.querySelectorAll('[data-moon-layer]').forEach((item) => item.classList.toggle('active', item === selectedButton));
+            selectedButton.classList.add('loading');
+            const source = document.getElementById('moon-layer-source');
+            if (source) source.textContent = `${moonSources[layer]} · LOADING`;
+            try { await window.setMoonSurfaceLayer?.(layer); }
+            finally {
+                selectedButton.classList.remove('loading');
+                if (source) source.textContent = moonSources[layer];
+            }
+        });
+    });
+
+    const marsSources = {
+        natural: 'NATURAL SURFACE',
+        elevation: 'NASA/USGS MOLA · 4K',
+        thermal: 'MARS ODYSSEY THEMIS · IR',
+        orbital: 'MGS MOC · ORBITAL MOSAIC',
+    };
+    document.querySelectorAll('[data-mars-layer]').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            const selectedButton = event.currentTarget;
+            const layer = selectedButton.dataset.marsLayer;
+            document.querySelectorAll('[data-mars-layer]').forEach((item) => item.classList.toggle('active', item === selectedButton));
+            selectedButton.classList.add('loading');
+            const source = document.getElementById('mars-layer-source');
+            if (source) source.textContent = `${marsSources[layer]} · LOADING`;
+            try { await window.setMarsSurfaceLayer?.(layer); }
+            finally {
+                selectedButton.classList.remove('loading');
+                if (source) source.textContent = marsSources[layer];
+            }
+        });
     });
 
     // Pointer events on canvas
@@ -358,7 +421,9 @@ const originalSetViewMode = setViewMode;
 setViewMode = function (mode) {
     originalSetViewMode(mode);
     const toolbar = document.getElementById('moon-toolbar');
+    const marsToolbar = document.getElementById('mars-toolbar');
     const isMoon = mode === 'moon';
+    const isMars = mode === 'mars';
     moonToolVisuals.visible = isMoon;
 
     // Measurement mode disables orbit rotation so clicks land precisely. Always
@@ -374,4 +439,7 @@ setViewMode = function (mode) {
             toolbar.classList.add('hidden');
         }
     }
+    if (marsToolbar) marsToolbar.classList.toggle('hidden', !isMars);
+    document.querySelector('.data-panel')?.classList.toggle('surface-toolbar-open', isMoon);
+    document.getElementById('orrery-readout')?.classList.toggle('surface-toolbar-open', isMars);
 };

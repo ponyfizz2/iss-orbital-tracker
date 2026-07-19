@@ -90,12 +90,12 @@ const CATALOG_OBJECTS = [
   { key: 'moon', name: 'Moon', type: 'moon', mode: 'moon', tag: 'surface tools', note: 'Lunar surface with Apollo labels plus measuring tools for distances and crater areas.' },
   { key: 'mars', name: 'Mars', type: 'planet', mode: 'mars', tag: 'red planet', note: 'Mars globe with relay-orbit context for exploration planning.' },
   { key: 'sun', name: 'Sun', type: 'star', mode: 'solar', tag: 'orrery', note: 'Center of the compact solar-system survey.' },
-  { key: 'mercury', name: 'Mercury', type: 'planet', mode: 'solar', tag: 'inner planet', note: 'Fast, cratered inner planet with the tightest solar orbit.' },
-  { key: 'venus', name: 'Venus', type: 'planet', mode: 'solar', tag: 'inner planet', note: 'Cloud-covered world and near twin of Earth by size.' },
-  { key: 'jupiter', name: 'Jupiter', type: 'planet', mode: 'solar', tag: 'gas giant', note: 'Largest planet in the system, scaled down here for usable comparison.' },
-  { key: 'saturn', name: 'Saturn', type: 'planet', mode: 'solar', tag: 'rings', note: 'Ringed gas giant represented with a tilted ring plane.' },
-  { key: 'uranus', name: 'Uranus', type: 'planet', mode: 'solar', tag: 'ice giant', note: 'Ice giant placed from its current JPL-derived heliocentric position.' },
-  { key: 'neptune', name: 'Neptune', type: 'planet', mode: 'solar', tag: 'ice giant', note: 'Outermost major planet in the live compact orrery.' },
+  { key: 'mercury', name: 'Mercury', type: 'planet', mode: 'mercury', tag: 'surface globe', note: 'Inspect Mercury as a full-size cratered globe.' },
+  { key: 'venus', name: 'Venus', type: 'planet', mode: 'venus', tag: 'cloud globe', note: 'Inspect the global cloud patterns of Venus.' },
+  { key: 'jupiter', name: 'Jupiter', type: 'planet', mode: 'jupiter', tag: 'storm globe', note: 'Inspect Jupiter’s belts, zones, and Great Red Spot.' },
+  { key: 'saturn', name: 'Saturn', type: 'planet', mode: 'saturn', tag: 'ring globe', note: 'Inspect Saturn and its broad ring system.' },
+  { key: 'uranus', name: 'Uranus', type: 'planet', mode: 'uranus', tag: 'ice giant', note: 'Inspect Uranus with its extreme axial tilt and narrow rings.' },
+  { key: 'neptune', name: 'Neptune', type: 'planet', mode: 'neptune', tag: 'ice giant', note: 'Inspect Neptune’s blue atmosphere, clouds, and dark storm.' },
   { key: 'hubble', name: 'Hubble Space Telescope', type: 'spacecraft', mode: 'dots', tag: 'toggle layer', note: 'Enables and frames the Hubble orbital layer.' },
   { key: 'starlink', name: 'Starlink shell', type: 'constellation', mode: 'dots', tag: 'toggle layer', note: 'Enables a large low-orbit satellite shell for scale comparison.' },
   { key: 'gps', name: 'GPS constellation', type: 'constellation', mode: 'dots', tag: 'toggle layer', note: 'Enables medium-Earth navigation satellites far above low orbit.' },
@@ -308,15 +308,17 @@ function setBodyMode(mode) {
 function syncExplorationMode(mode) {
   if (!explorationReady) return;
   const isSolar = mode === 'solar';
+  const isPlanet = typeof isPlanetViewMode === 'function' && isPlanetViewMode(mode);
   if (isSolar) createSolarSystemView();
   if (solarGroup) solarGroup.visible = isSolar;
   if (typeof earthGroup !== 'undefined' && earthGroup) earthGroup.visible = !isSolar;
 
   const dataPanel = document.querySelector('.data-panel');
-  if (dataPanel) dataPanel.style.display = isSolar ? 'none' : '';
+  if (dataPanel) dataPanel.style.display = (isSolar || isPlanet) ? 'none' : '';
 
   const readout = document.getElementById('orrery-readout');
-  if (readout) readout.classList.toggle('visible', isSolar);
+  if (readout) readout.classList.toggle('visible', isSolar || isPlanet);
+  if (isPlanet && typeof updatePlanetViewReadout === 'function') updatePlanetViewReadout(mode);
 
   if (isSolar) {
     setFocus('Solar system survey');
@@ -329,7 +331,7 @@ function syncExplorationMode(mode) {
     controls.minDistance = 5.05;
     controls.maxDistance = 150;
     if (lastExplorationMode === 'solar') {
-      const returnPosition = mode === 'moon' || mode === 'mars'
+      const returnPosition = mode === 'moon' || isPlanet
         ? new THREE.Vector3(11, 6, 12)
         : new THREE.Vector3(14, 10, 14);
       moveCameraTo(returnPosition, new THREE.Vector3(0, 0, 0));
