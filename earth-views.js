@@ -1097,6 +1097,19 @@ function refreshSurfaceDetailOverlay() {
         const thetaLength = THREE.MathUtils.degToRad(bounds.maxLat - bounds.minLat);
         const geometry = new THREE.SphereGeometry(EARTH_RADIUS_UNITS * 1.006, 96, 64, phiStart, phiLength, thetaStart, thetaLength);
         const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide, depthWrite: true });
+        // LROC WAC source tiles preserve the original solar illumination. That
+        // is scientifically useful but can make a normal interactive Moon
+        // view almost black. Lift the shadows only on the display overlay so
+        // crater texture remains visible without altering the fetched data.
+        if (body === 'moon') {
+            material.onBeforeCompile = (shader) => {
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <map_fragment>',
+                    `#include <map_fragment>\n    diffuseColor.rgb = min(vec3(1.0), pow(max(diffuseColor.rgb, vec3(0.0)), vec3(0.48)) * 1.18);`
+                );
+            };
+            material.customProgramCacheKey = () => 'surface-detail-moon-shadow-lift-v1';
+        }
         const patch = new THREE.Mesh(geometry, material);
         patch.renderOrder = 3;
         if (surfaceDetailPatch) {
