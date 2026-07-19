@@ -12,6 +12,17 @@ const MOON_RADIUS_KM = 1737.4;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+const SURFACE_INSPECTOR_SOURCES = {
+    moon: {
+        title: 'Moon · LROC natural colour', detail: 'Global 4096×2048 overview · wheel to request higher-resolution imagery', src: 'assets/moon-natural-lroc-4k.jpg?v=1',
+        service: 'https://planetarymaps.usgs.gov/cgi-bin/mapserv', map: '/maps/earth/moon_simp_cyl.map', layer: 'LROC_WAC', label: 'USGS LROC WAC',
+    },
+    mars: {
+        title: 'Mars · MOLA elevation', detail: 'Global 4096×2048 overview · wheel to request higher-resolution imagery', src: 'assets/mars-elevation-mola-4k.jpg?v=1',
+        service: 'https://planetarymaps.usgs.gov/cgi-bin/mapserv', map: '/maps/mars/mars_simp_cyl.map', layer: 'THEMIS_controlled', label: 'USGS THEMIS controlled mosaic',
+    },
+};
+let surfaceInspectorState = { zoom: 1, lon: 0, lat: 0, x: 0, y: 0, drag: null, body: null };
 
 function initMoonTools() {
     earthGroup.add(moonToolVisuals);
@@ -25,6 +36,7 @@ function initMoonTools() {
         <button class="mt-btn surface-layer-btn active" data-moon-layer="natural" title="NASA LROC natural-colour mosaic, 4096 × 2048 pixels">Natural 4K</button>
         <button class="mt-btn surface-layer-btn" data-moon-layer="topography" title="USGS GLD100 colour-shaded topography">Topography</button>
         <button class="mt-btn surface-layer-btn" data-moon-layer="geology" title="USGS Unified Geologic Map of the Moon">Geology</button>
+        <button class="mt-btn" data-surface-inspect="moon">🔎 Inspect 4K</button>
         <span class="moon-source" id="moon-layer-source">NASA LROC · 4096×2048 · LOADING</span>
         <button class="mt-btn active" data-tool="pan">🖐️ Pan</button>
         <button class="mt-btn" data-tool="distance">📏 Distance</button>
@@ -43,11 +55,26 @@ function initMoonTools() {
         <button class="mt-btn surface-layer-btn" data-mars-layer="thermal">Thermal IR</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="orbital">Orbital</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="terraform" title="A visual terraforming simulation using the MOLA elevation map">Water Lab</button>
+        <button class="mt-btn" data-surface-inspect="mars">🔎 Inspect 4K</button>
         <label class="mars-water-control" for="mars-water-level">Sea level <input id="mars-water-level" type="range" min="-35" max="45" value="0" step="1"><output id="mars-water-readout">0 m</output></label>
         <span class="moon-source" id="mars-layer-source">NATURAL COLOUR BASEMAP · LOADED</span>
         <a class="mt-btn surface-external" href="https://murray-lab.caltech.edu/CTX/V01/SceneView/" target="_blank" rel="noopener" title="Open the official 5 m/pixel CTX mosaic">CTX 5m ↗</a>
     `;
     document.body.appendChild(marsToolbar);
+
+    const inspector = document.createElement('section');
+    inspector.id = 'surface-inspector';
+    inspector.className = 'surface-inspector';
+    inspector.setAttribute('aria-label', 'Native resolution surface inspector');
+    inspector.innerHTML = `
+        <header class="surface-inspector-header">
+            <div><strong id="surface-inspector-title">Surface inspector</strong><span id="surface-inspector-detail"></span></div>
+            <button class="mt-btn" id="surface-inspector-reset">Reset view</button>
+            <button class="mt-btn" id="surface-inspector-close" aria-label="Close surface inspector">×</button>
+        </header>
+        <div class="surface-inspector-stage"><img id="surface-inspector-image" alt="Native-resolution planetary surface map"></div>
+    `;
+    document.body.appendChild(inspector);
 
     // Styles for toolbar
     const style = document.createElement('style');
@@ -136,6 +163,60 @@ function initMoonTools() {
         }
         #btn-clear-moon { border-color: rgba(239, 68, 68, 0.3); color: #fca5a5; }
         #btn-clear-moon:hover { background: rgba(239, 68, 68, 0.15); }
+        .surface-inspector {
+            position: absolute;
+            z-index: 72;
+            top: 118px;
+            bottom: 94px;
+            left: 50%;
+            width: min(1200px, calc(100vw - 32px));
+            transform: translateX(-50%);
+            display: none;
+            grid-template-rows: auto minmax(0, 1fr);
+            gap: 10px;
+            pointer-events: auto;
+        }
+        .surface-inspector.visible { display: grid; }
+        .surface-inspector-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 12px;
+            border: 1px solid rgba(125, 211, 252, 0.28);
+            border-radius: 10px;
+            background: rgba(3, 7, 18, 0.86);
+            backdrop-filter: blur(14px);
+        }
+        .surface-inspector-header div { display: grid; gap: 2px; margin-right: auto; }
+        .surface-inspector-header strong { color: #e0f2fe; font-size: .82rem; }
+        .surface-inspector-header span { color: #94a3b8; font: .58rem 'JetBrains Mono', monospace; }
+        .surface-inspector-stage {
+            min-height: 0;
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+            background: #020617;
+            border: 1px solid rgba(125, 211, 252, 0.20);
+            border-radius: 12px;
+            cursor: grab;
+            touch-action: none;
+        }
+        .surface-inspector-stage.dragging { cursor: grabbing; }
+        .surface-inspector-stage img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-width: none;
+            user-select: none;
+            -webkit-user-drag: none;
+            transform-origin: center;
+            transition: transform .06s linear;
+        }
+        @media (max-width: 700px) {
+            .surface-inspector { top: 84px; bottom: 80px; width: calc(100vw - 16px); }
+            .surface-inspector-header span { display: none; }
+        }
     `;
     document.head.appendChild(style);
 
@@ -204,12 +285,154 @@ function initMoonTools() {
         if (output) output.textContent = `${level > 0 ? '+' : ''}${level} m`;
         window.setMarsWaterLevel?.(level);
     });
+    document.querySelectorAll('[data-surface-inspect]').forEach((button) => {
+        button.addEventListener('click', () => openSurfaceInspector(button.dataset.surfaceInspect));
+    });
+    document.getElementById('surface-inspector-close')?.addEventListener('click', closeSurfaceInspector);
+    document.getElementById('surface-inspector-reset')?.addEventListener('click', resetSurfaceInspector);
+    initSurfaceInspectorGestures();
 
     // Pointer events on canvas
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
     // Initial moon landing labels
     createMoonLandingLabels();
+}
+
+function openSurfaceInspector(body) {
+    const source = SURFACE_INSPECTOR_SOURCES[body];
+    const panel = document.getElementById('surface-inspector');
+    const image = document.getElementById('surface-inspector-image');
+    if (!source || !panel || !image) return;
+    surfaceInspectorState = { zoom: 1, lon: 0, lat: 0, x: 0, y: 0, drag: null, body };
+    document.getElementById('surface-inspector-title').textContent = source.title;
+    document.getElementById('surface-inspector-detail').textContent = source.detail;
+    image.alt = `${source.title} native-resolution surface map`;
+    panel.classList.add('visible');
+    refreshSurfaceInspectorImage();
+}
+
+function closeSurfaceInspector() {
+    document.getElementById('surface-inspector')?.classList.remove('visible');
+    surfaceInspectorState.drag = null;
+}
+
+function resetSurfaceInspector() {
+    surfaceInspectorState.zoom = 1;
+    surfaceInspectorState.lon = 0;
+    surfaceInspectorState.lat = 0;
+    surfaceInspectorState.x = 0;
+    surfaceInspectorState.y = 0;
+    refreshSurfaceInspectorImage();
+}
+
+function applySurfaceInspectorTransform() {
+    const image = document.getElementById('surface-inspector-image');
+    if (!image) return;
+    image.style.transform = `translate(${surfaceInspectorState.x}px, ${surfaceInspectorState.y}px)`;
+}
+
+function getSurfaceInspectorBounds() {
+    const zoom = surfaceInspectorState.zoom;
+    const halfLon = 180 / zoom;
+    const halfLat = 90 / zoom;
+    surfaceInspectorState.lon = Math.max(-180 + halfLon, Math.min(180 - halfLon, surfaceInspectorState.lon));
+    surfaceInspectorState.lat = Math.max(-90 + halfLat, Math.min(90 - halfLat, surfaceInspectorState.lat));
+    return {
+        minLon: surfaceInspectorState.lon - halfLon,
+        maxLon: surfaceInspectorState.lon + halfLon,
+        minLat: surfaceInspectorState.lat - halfLat,
+        maxLat: surfaceInspectorState.lat + halfLat,
+    };
+}
+
+function getSurfaceInspectorWmsUrl(source) {
+    const bounds = getSurfaceInspectorBounds();
+    const params = new URLSearchParams({
+        map: source.map,
+        SERVICE: 'WMS',
+        VERSION: '1.1.1',
+        REQUEST: 'GetMap',
+        LAYERS: source.layer,
+        STYLES: '',
+        SRS: 'EPSG:4326',
+        BBOX: `${bounds.minLon},${bounds.minLat},${bounds.maxLon},${bounds.maxLat}`,
+        WIDTH: '3072',
+        HEIGHT: '1536',
+        FORMAT: 'image/png',
+        TRANSPARENT: 'false',
+    });
+    return `${source.service}?${params.toString()}`;
+}
+
+function refreshSurfaceInspectorImage() {
+    const source = SURFACE_INSPECTOR_SOURCES[surfaceInspectorState.body];
+    const image = document.getElementById('surface-inspector-image');
+    const detail = document.getElementById('surface-inspector-detail');
+    if (!source || !image || !detail) return;
+    surfaceInspectorState.x = 0;
+    surfaceInspectorState.y = 0;
+    applySurfaceInspectorTransform();
+    if (surfaceInspectorState.zoom === 1) {
+        image.onload = null;
+        image.onerror = null;
+        detail.textContent = source.detail;
+        image.src = source.src;
+        return;
+    }
+    detail.textContent = `${source.label} · ${surfaceInspectorState.zoom}× detail viewport · loading 3072×1536 image`;
+    image.onload = () => {
+        detail.textContent = `${source.label} · ${surfaceInspectorState.zoom}× detail viewport · 3072×1536 loaded`;
+    };
+    image.onerror = () => {
+        detail.textContent = `${source.label} unavailable · showing 4096×2048 overview`;
+        image.onload = null;
+        image.onerror = null;
+        image.src = source.src;
+    };
+    image.src = getSurfaceInspectorWmsUrl(source);
+}
+
+function initSurfaceInspectorGestures() {
+    const stage = document.querySelector('.surface-inspector-stage');
+    if (!stage) return;
+    stage.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const delta = event.deltaY > 0 ? -1 : 1;
+        surfaceInspectorState.zoom = Math.max(1, Math.min(8, surfaceInspectorState.zoom + delta));
+        if (surfaceInspectorState.zoom === 1) {
+            surfaceInspectorState.x = 0;
+            surfaceInspectorState.y = 0;
+        }
+        refreshSurfaceInspectorImage();
+    }, { passive: false });
+    stage.addEventListener('pointerdown', (event) => {
+        if (surfaceInspectorState.zoom <= 1) return;
+        stage.setPointerCapture?.(event.pointerId);
+        surfaceInspectorState.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, panX: surfaceInspectorState.x, panY: surfaceInspectorState.y };
+        stage.classList.add('dragging');
+    });
+    stage.addEventListener('pointermove', (event) => {
+        const drag = surfaceInspectorState.drag;
+        if (!drag || drag.id !== event.pointerId) return;
+        surfaceInspectorState.x = drag.panX + event.clientX - drag.x;
+        surfaceInspectorState.y = drag.panY + event.clientY - drag.y;
+        applySurfaceInspectorTransform();
+    });
+    const finish = (event) => {
+        const drag = surfaceInspectorState.drag;
+        if (drag && drag.id === event.pointerId) {
+            const spanLon = 360 / surfaceInspectorState.zoom;
+            const spanLat = 180 / surfaceInspectorState.zoom;
+            surfaceInspectorState.lon -= (surfaceInspectorState.x / stage.clientWidth) * spanLon;
+            surfaceInspectorState.lat += (surfaceInspectorState.y / stage.clientHeight) * spanLat;
+            surfaceInspectorState.drag = null;
+            refreshSurfaceInspectorImage();
+        }
+        stage.classList.remove('dragging');
+    };
+    stage.addEventListener('pointerup', finish);
+    stage.addEventListener('pointercancel', finish);
 }
 
 function clearMoonVisuals() {
@@ -461,6 +684,7 @@ setViewMode = function (mode) {
         }
     }
     if (marsToolbar) marsToolbar.classList.toggle('hidden', !isMars);
+    if (!isMoon && !isMars) closeSurfaceInspector();
     document.querySelector('.data-panel')?.classList.toggle('surface-toolbar-open', isMoon);
     document.getElementById('orrery-readout')?.classList.toggle('surface-toolbar-open', isMars);
 };
