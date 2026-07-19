@@ -36,8 +36,9 @@ function initMoonTools() {
         <button class="mt-btn surface-layer-btn active" data-moon-layer="natural" title="NASA LROC natural-colour mosaic, 4096 × 2048 pixels">Natural 4K</button>
         <button class="mt-btn surface-layer-btn" data-moon-layer="topography" title="USGS GLD100 colour-shaded topography">Topography</button>
         <button class="mt-btn surface-layer-btn" data-moon-layer="geology" title="USGS Unified Geologic Map of the Moon">Geology</button>
-        <button class="mt-btn" data-surface-inspect="moon">🔎 Inspect 4K</button>
+        <button class="mt-btn" data-surface-detail="moon" title="Overlay USGS detail on the globe; it refreshes as you zoom">🔎 Surface detail</button>
         <span class="moon-source" id="moon-layer-source">NASA LROC · 4096×2048 · LOADING</span>
+        <span class="moon-source surface-detail-status" id="moon-detail-status">DETAIL OVERLAY OFF</span>
         <button class="mt-btn active" data-tool="pan">🖐️ Pan</button>
         <button class="mt-btn" data-tool="distance">📏 Distance</button>
         <button class="mt-btn" data-tool="crater">⭕ Crater Area</button>
@@ -55,9 +56,10 @@ function initMoonTools() {
         <button class="mt-btn surface-layer-btn" data-mars-layer="thermal">Thermal IR</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="orbital">Orbital</button>
         <button class="mt-btn surface-layer-btn" data-mars-layer="terraform" title="A visual terraforming simulation using the MOLA elevation map">Water Lab</button>
-        <button class="mt-btn" data-surface-inspect="mars">🔎 Inspect 4K</button>
+        <button class="mt-btn" data-surface-detail="mars" title="Overlay USGS detail on the globe; it refreshes as you zoom">🔎 Surface detail</button>
         <label class="mars-water-control" for="mars-water-level">Sea level <input id="mars-water-level" type="range" min="-35" max="45" value="0" step="1"><output id="mars-water-readout">0 m</output></label>
         <span class="moon-source" id="mars-layer-source">NATURAL COLOUR BASEMAP · LOADED</span>
+        <span class="moon-source surface-detail-status" id="mars-detail-status">DETAIL OVERLAY OFF</span>
         <a class="mt-btn surface-external" href="https://murray-lab.caltech.edu/CTX/V01/SceneView/" target="_blank" rel="noopener" title="Open the official 5 m/pixel CTX mosaic">CTX 5m ↗</a>
     `;
     document.body.appendChild(marsToolbar);
@@ -293,8 +295,17 @@ function initMoonTools() {
         if (output) output.textContent = `${level > 0 ? '+' : ''}${level} m`;
         window.setMarsWaterLevel?.(level);
     });
-    document.querySelectorAll('[data-surface-inspect]').forEach((button) => {
-        button.addEventListener('click', () => openSurfaceInspector(button.dataset.surfaceInspect));
+    document.querySelectorAll('[data-surface-detail]').forEach((button) => {
+        button.addEventListener('click', () => window.toggleSurfaceDetailOverlay?.(button.dataset.surfaceDetail));
+    });
+    window.addEventListener('surface-detail-update', (event) => {
+        const { body, active, label } = event.detail;
+        ['moon', 'mars'].forEach((key) => {
+            const button = document.querySelector(`[data-surface-detail="${key}"]`);
+            button?.classList.toggle('active', Boolean(active && body === key));
+            const status = document.getElementById(`${key}-detail-status`);
+            if (status) status.textContent = active && body === key ? label : 'DETAIL OVERLAY OFF';
+        });
     });
     document.getElementById('surface-inspector-close')?.addEventListener('click', closeSurfaceInspector);
     document.getElementById('surface-inspector-reset')?.addEventListener('click', resetSurfaceInspector);
